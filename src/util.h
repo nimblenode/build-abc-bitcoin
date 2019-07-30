@@ -11,15 +11,18 @@
 #define BITCOIN_UTIL_H
 
 #if defined(HAVE_CONFIG_H)
-#include "config/bitcoin-config.h"
+#include <config/bitcoin-config.h>
 #endif
 
-#include "compat.h"
-#include "fs.h"
-#include "logging.h"
-#include "sync.h"
-#include "tinyformat.h"
-#include "utiltime.h"
+#include <compat.h>
+#include <fs.h>
+#include <logging.h>
+#include <sync.h>
+#include <tinyformat.h>
+#include <utiltime.h>
+
+#include <boost/signals2/signal.hpp>
+#include <boost/thread/condition_variable.hpp> // for boost::thread_interrupted
 
 #include <atomic>
 #include <cstdint>
@@ -29,9 +32,6 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
-
-#include <boost/signals2/signal.hpp>
-#include <boost/thread/condition_variable.hpp> // for boost::thread_interrupted
 
 // Application startup time (used for uptime calculation)
 int64_t GetStartupTime();
@@ -67,13 +67,26 @@ template <typename... Args> bool error(const char *fmt, const Args &... args) {
 }
 
 void PrintExceptionContinue(const std::exception *pex, const char *pszThread);
-void FileCommit(FILE *file);
+bool FileCommit(FILE *file);
 bool TruncateFile(FILE *file, unsigned int length);
 int RaiseFileDescriptorLimit(int nMinFD);
 void AllocateFileRange(FILE *file, unsigned int offset, unsigned int length);
 bool RenameOver(fs::path src, fs::path dest);
+bool LockDirectory(const fs::path &directory, const std::string lockfile_name,
+                   bool probe_only = false);
+bool DirIsWritable(const fs::path &directory);
+bool CheckDiskSpace(const fs::path &dir, uint64_t nAdditionalBytes = 0);
+
+/**
+ * Release all directory locks. This is used for unit testing only, at runtime
+ * the global destructor will take care of the locks.
+ */
+void ReleaseDirectoryLocks();
+
 bool TryCreateDirectories(const fs::path &p);
 fs::path GetDefaultDataDir();
+// The blocks directory is always net specific.
+const fs::path &GetBlocksDir();
 const fs::path &GetDataDir(bool fNetSpecific = true);
 void ClearDatadirCache();
 fs::path GetConfigFile(const std::string &confPath);
@@ -94,17 +107,49 @@ inline bool IsSwitchChar(char c) {
 #endif
 }
 
+enum class OptionsCategory {
+    OPTIONS,
+    CONNECTION,
+    WALLET,
+    WALLET_DEBUG_TEST,
+    ZMQ,
+    DEBUG_TEST,
+    CHAINPARAMS,
+    NODE_RELAY,
+    BLOCK_CREATION,
+    RPC,
+    GUI,
+    COMMANDS,
+    REGISTER_COMMANDS,
+
+    // Always the last option to avoid printing these in the help
+    HIDDEN,
+};
+
 class ArgsManager {
 protected:
     friend class ArgsManagerHelper;
+
+    struct Arg {
+        std::string m_help_param;
+        std::string m_help_text;
+        bool m_debug_only;
+
+        Arg(const std::string &help_param, const std::string &help_text,
+            bool debug_only)
+            : m_help_param(help_param), m_help_text(help_text),
+              m_debug_only(debug_only){};
+    };
 
     mutable CCriticalSection cs_args;
     std::map<std::string, std::vector<std::string>> m_override_args;
     std::map<std::string, std::vector<std::string>> m_config_args;
     std::string m_network;
     std::set<std::string> m_network_only_args;
+    std::map<OptionsCategory, std::map<std::string, Arg>> m_available_args;
 
-    void ReadConfigStream(std::istream &stream);
+    bool ReadConfigStream(std::istream &stream, std::string &error,
+                          bool ignore_invalid_keys = false);
 
 public:
     ArgsManager();
@@ -114,8 +159,9 @@ public:
      */
     void SelectConfigNetwork(const std::string &network);
 
-    void ParseParameters(int argc, const char *const argv[]);
-    void ReadConfigFile(const std::string &confPath);
+    bool ParseParameters(int argc, const char *const argv[],
+                         std::string &error);
+    bool ReadConfigFiles(std::string &error, bool ignore_invalid_keys = false);
 
     /**
      * Log warnings for options in m_section_only_args when they are specified
@@ -195,7 +241,8 @@ public:
      */
     bool SoftSetBoolArg(const std::string &strArg, bool fValue);
 
-    // Forces a arg setting, used only in testing
+    // Forces an arg setting. Called by SoftSetArg() if the arg hasn't already
+    // been set. Also called directly in testing.
     void ForceSetArg(const std::string &strArg, const std::string &strValue);
 
     // Forces a multi arg setting, used only in testing
@@ -210,8 +257,29 @@ public:
      */
     std::string GetChainName() const;
 
+    /**
+     * Add argument
+     */
+    void AddArg(const std::string &name, const std::string &help,
+                const bool debug_only, const OptionsCategory &cat);
+
     // Remove an arg setting, used only in testing
     void ClearArg(const std::string &strArg);
+
+    /**
+     * Clear available arguments
+     */
+    void ClearArgs() { m_available_args.clear(); }
+
+    /**
+     * Get the help string
+     */
+    std::string GetHelpMessage();
+
+    /**
+     * Check whether we know of this arg
+     */
+    bool IsArgKnown(const std::string &key, std::string &error);
 };
 
 extern ArgsManager gArgs;
@@ -272,10 +340,18 @@ template <typename Callable> void TraceThread(const char *name, Callable func) {
 
 std::string CopyrightHolders(const std::string &strPrefix);
 
-//! Substitute for C++14 std::make_unique.
-template <typename T, typename... Args>
-std::unique_ptr<T> MakeUnique(Args &&... args) {
-    return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+namespace util {
+
+//! Simplification of std insertion
+template <typename Tdst, typename Tsrc>
+inline void insert(Tdst &dst, const Tsrc &src) {
+    dst.insert(dst.begin(), src.begin(), src.end());
 }
+template <typename TsetT, typename Tsrc>
+inline void insert(std::set<TsetT> &dst, const Tsrc &src) {
+    dst.insert(src.begin(), src.end());
+}
+
+} // namespace util
 
 #endif // BITCOIN_UTIL_H

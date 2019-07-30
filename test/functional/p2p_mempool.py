@@ -2,10 +2,16 @@
 # Copyright (c) 2015-2016 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
+"""Test p2p mempool message.
 
-from test_framework.mininode import *
+Test that nodes are disconnected if they send mempool messages when bloom
+filters are not enabled.
+"""
+
+from test_framework.messages import msg_mempool
+from test_framework.mininode import network_thread_start, P2PInterface
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import *
+from test_framework.util import assert_equal
 
 
 class P2PMempoolTests(BitcoinTestFramework):

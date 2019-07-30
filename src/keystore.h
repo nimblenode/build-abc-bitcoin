@@ -6,11 +6,11 @@
 #ifndef BITCOIN_KEYSTORE_H
 #define BITCOIN_KEYSTORE_H
 
-#include "key.h"
-#include "pubkey.h"
-#include "script/script.h"
-#include "script/standard.h"
-#include "sync.h"
+#include <key.h>
+#include <pubkey.h>
+#include <script/script.h>
+#include <script/standard.h>
+#include <sync.h>
 
 #include <boost/signals2/signal.hpp>
 
@@ -62,26 +62,33 @@ protected:
     ScriptMap mapScripts;
     WatchOnlySet setWatchOnly;
 
+    void ImplicitlyLearnRelatedKeyScripts(const CPubKey &pubkey);
+
 public:
     bool AddKeyPubKey(const CKey &key, const CPubKey &pubkey) override;
     bool GetPubKey(const CKeyID &address, CPubKey &vchPubKeyOut) const override;
     bool HaveKey(const CKeyID &address) const override;
     std::set<CKeyID> GetKeys() const override;
     bool GetKey(const CKeyID &address, CKey &keyOut) const override;
-    virtual bool AddCScript(const CScript &redeemScript) override;
-    virtual bool HaveCScript(const CScriptID &hash) const override;
+    bool AddCScript(const CScript &redeemScript) override;
+    bool HaveCScript(const CScriptID &hash) const override;
     std::set<CScriptID> GetCScripts() const override;
-    virtual bool GetCScript(const CScriptID &hash,
-                            CScript &redeemScriptOut) const override;
+    bool GetCScript(const CScriptID &hash,
+                    CScript &redeemScriptOut) const override;
 
-    virtual bool AddWatchOnly(const CScript &dest) override;
-    virtual bool RemoveWatchOnly(const CScript &dest) override;
-    virtual bool HaveWatchOnly(const CScript &dest) const override;
-    virtual bool HaveWatchOnly() const override;
+    bool AddWatchOnly(const CScript &dest) override;
+    bool RemoveWatchOnly(const CScript &dest) override;
+    bool HaveWatchOnly(const CScript &dest) const override;
+    bool HaveWatchOnly() const override;
 };
 
 typedef std::vector<uint8_t, secure_allocator<uint8_t>> CKeyingMaterial;
 typedef std::map<CKeyID, std::pair<CPubKey, std::vector<uint8_t>>>
     CryptedKeyMap;
+
+/**
+ * Return the CKeyID of the key involved in a script (if there is a unique one).
+ */
+CKeyID GetKeyForDestination(const CKeyStore &store, const CTxDestination &dest);
 
 #endif // BITCOIN_KEYSTORE_H

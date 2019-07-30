@@ -2,14 +2,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "bloom.h"
+#include <bloom.h>
 
-#include "hash.h"
-#include "primitives/transaction.h"
-#include "random.h"
-#include "script/script.h"
-#include "script/standard.h"
-#include "streams.h"
+#include <hash.h>
+#include <primitives/transaction.h>
+#include <random.h>
+#include <script/script.h>
+#include <script/standard.h>
+#include <streams.h>
 
 #include <cmath>
 #include <cstdlib>
@@ -30,8 +30,8 @@
  * See https://en.wikipedia.org/wiki/Bloom_filter for an explanation of these
  * formulas.
  */
-CBloomFilter::CBloomFilter(uint32_t nElements, double nFPRate,
-                           uint32_t nTweakIn, uint8_t nFlagsIn)
+CBloomFilter::CBloomFilter(const uint32_t nElements, const double nFPRate,
+                           const uint32_t nTweakIn, uint8_t nFlagsIn)
     : vData(std::min<uint32_t>(-1 / LN2SQUARED * nElements * log(nFPRate),
                                MAX_BLOOM_FILTER_SIZE * 8) /
             8),
@@ -41,8 +41,8 @@ CBloomFilter::CBloomFilter(uint32_t nElements, double nFPRate,
       nTweak(nTweakIn), nFlags(nFlagsIn) {}
 
 // Private constructor used by CRollingBloomFilter
-CBloomFilter::CBloomFilter(uint32_t nElements, double nFPRate,
-                           uint32_t nTweakIn)
+CBloomFilter::CBloomFilter(const uint32_t nElements, const double nFPRate,
+                           const uint32_t nTweakIn)
     : vData(uint32_t(-1 / LN2SQUARED * nElements * log(nFPRate)) / 8),
       isFull(false), isEmpty(true),
       nHashFuncs(uint32_t(vData.size() * 8 / nElements * LN2)),
@@ -117,7 +117,7 @@ void CBloomFilter::clear() {
     isEmpty = true;
 }
 
-void CBloomFilter::reset(uint32_t nNewTweak) {
+void CBloomFilter::reset(const uint32_t nNewTweak) {
     clear();
     nTweak = nNewTweak;
 }
@@ -127,7 +127,7 @@ bool CBloomFilter::IsWithinSizeConstraints() const {
            nHashFuncs <= MAX_HASH_FUNCS;
 }
 
-bool CBloomFilter::IsRelevantAndUpdate(const CTransaction &tx) {
+bool CBloomFilter::MatchAndInsertOutputs(const CTransaction &tx) {
     bool fFound = false;
     // Match if the filter contains the hash of tx for finding tx when they
     // appear in a block
@@ -176,8 +176,12 @@ bool CBloomFilter::IsRelevantAndUpdate(const CTransaction &tx) {
         }
     }
 
-    if (fFound) {
-        return true;
+    return fFound;
+}
+
+bool CBloomFilter::MatchInputs(const CTransaction &tx) {
+    if (isEmpty) {
+        return false;
     }
 
     for (const CTxIn &txin : tx.vin) {
@@ -215,7 +219,8 @@ void CBloomFilter::UpdateEmptyFull() {
     isEmpty = empty;
 }
 
-CRollingBloomFilter::CRollingBloomFilter(uint32_t nElements, double fpRate) {
+CRollingBloomFilter::CRollingBloomFilter(const uint32_t nElements,
+                                         const double fpRate) {
     double logFpRate = log(fpRate);
     /* The optimal number of hash functions is log(fpRate) / log(0.5), but
      * restrict it to the range 1-50. */
@@ -264,8 +269,8 @@ void CRollingBloomFilter::insert(const std::vector<uint8_t> &vKey) {
         if (nGeneration == 4) {
             nGeneration = 1;
         }
-        uint64_t nGenerationMask1 = -uint64_t(nGeneration & 1);
-        uint64_t nGenerationMask2 = -uint64_t(nGeneration >> 1);
+        uint64_t nGenerationMask1 = 0 - uint64_t(nGeneration & 1);
+        uint64_t nGenerationMask2 = 0 - uint64_t(nGeneration >> 1);
         /* Wipe old entries that used this generation number. */
         for (uint32_t p = 0; p < data.size(); p += 2) {
             uint64_t p1 = data[p], p2 = data[p + 1];

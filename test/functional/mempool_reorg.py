@@ -2,14 +2,14 @@
 # Copyright (c) 2014-2016 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
+"""Test mempool re-org scenarios.
 
-#
-# Test re-org scenarios with a mempool that contains transactions
-# that spend (directly or indirectly) coinbase transactions.
-#
+Test re-org scenarios with a mempool that contains transactions
+that spend (directly or indirectly) coinbase transactions.
+"""
 
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import *
+from test_framework.util import assert_equal, assert_raises_rpc_error, create_tx
 
 # Create one-input, one-output, no-fee transaction:
 
@@ -55,7 +55,8 @@ class MempoolCoinbaseTest(BitcoinTestFramework):
         timelock_tx = timelock_tx.replace("ffffffff", "11111191", 1)
         timelock_tx = timelock_tx[:-8] + \
             hex(self.nodes[0].getblockcount() + 2)[2:] + "000000"
-        timelock_tx = self.nodes[0].signrawtransaction(timelock_tx)["hex"]
+        timelock_tx = self.nodes[0].signrawtransactionwithwallet(timelock_tx)[
+            "hex"]
         # This will raise an exception because the timelock transaction is too immature to spend
         assert_raises_rpc_error(-26, "bad-txns-nonfinal",
                                 self.nodes[0].sendrawtransaction, timelock_tx)

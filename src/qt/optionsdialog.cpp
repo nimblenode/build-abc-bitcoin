@@ -3,19 +3,19 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #if defined(HAVE_CONFIG_H)
-#include "config/bitcoin-config.h"
+#include <config/bitcoin-config.h>
 #endif
 
-#include "optionsdialog.h"
-#include "ui_optionsdialog.h"
+#include <qt/forms/ui_optionsdialog.h>
+#include <qt/optionsdialog.h>
 
-#include "bitcoinunits.h"
-#include "guiutil.h"
-#include "optionsmodel.h"
-
-#include "netbase.h"
-#include "txdb.h"       // for -dbcache defaults
-#include "validation.h" // for DEFAULT_SCRIPTCHECK_THREADS and MAX_SCRIPTCHECK_THREADS
+#include <interfaces/node.h>
+#include <netbase.h>
+#include <qt/bitcoinunits.h>
+#include <qt/guiutil.h>
+#include <qt/optionsmodel.h>
+#include <txdb.h>       // for -dbcache defaults
+#include <validation.h> // for DEFAULT_SCRIPTCHECK_THREADS and MAX_SCRIPTCHECK_THREADS
 
 #include <QDataWidgetMapper>
 #include <QDir>
@@ -79,6 +79,9 @@ OptionsDialog::OptionsDialog(QWidget *parent, bool enableWallet)
         ui->bitcoinAtStartup->toolTip().arg(tr(PACKAGE_NAME)));
     ui->bitcoinAtStartup->setText(
         ui->bitcoinAtStartup->text().arg(tr(PACKAGE_NAME)));
+
+    ui->openBitcoinConfButton->setToolTip(
+        ui->openBitcoinConfButton->toolTip().arg(tr(PACKAGE_NAME)));
 
     ui->lang->setToolTip(ui->lang->toolTip().arg(tr(PACKAGE_NAME)));
     ui->lang->addItem(QString("(") + tr("default") + QString(")"),
@@ -229,6 +232,22 @@ void OptionsDialog::on_resetButton_clicked() {
     }
 }
 
+void OptionsDialog::on_openBitcoinConfButton_clicked() {
+    /* explain the purpose of the config file */
+    QMessageBox::information(
+        this, tr("Configuration options"),
+        tr("The configuration file is used to specify advanced user options "
+           "which override GUI settings. Additionally, any command-line "
+           "options will override this configuration file."));
+
+    /* show an error if there was some problem opening the file */
+    if (!GUIUtil::openBitcoinConf()) {
+        QMessageBox::critical(
+            this, tr("Error"),
+            tr("The configuration file could not be opened."));
+    }
+}
+
 void OptionsDialog::on_okButton_clicked() {
     mapper->submit();
     accept();
@@ -294,21 +313,21 @@ void OptionsDialog::updateDefaultProxyNets() {
     std::string strProxy;
     QString strDefaultProxyGUI;
 
-    GetProxy(NET_IPV4, proxy);
+    model->node().getProxy(NET_IPV4, proxy);
     strProxy = proxy.proxy.ToStringIP() + ":" + proxy.proxy.ToStringPort();
     strDefaultProxyGUI = ui->proxyIp->text() + ":" + ui->proxyPort->text();
     (strProxy == strDefaultProxyGUI.toStdString())
         ? ui->proxyReachIPv4->setChecked(true)
         : ui->proxyReachIPv4->setChecked(false);
 
-    GetProxy(NET_IPV6, proxy);
+    model->node().getProxy(NET_IPV6, proxy);
     strProxy = proxy.proxy.ToStringIP() + ":" + proxy.proxy.ToStringPort();
     strDefaultProxyGUI = ui->proxyIp->text() + ":" + ui->proxyPort->text();
     (strProxy == strDefaultProxyGUI.toStdString())
         ? ui->proxyReachIPv6->setChecked(true)
         : ui->proxyReachIPv6->setChecked(false);
 
-    GetProxy(NET_TOR, proxy);
+    model->node().getProxy(NET_ONION, proxy);
     strProxy = proxy.proxy.ToStringIP() + ":" + proxy.proxy.ToStringPort();
     strDefaultProxyGUI = ui->proxyIp->text() + ":" + ui->proxyPort->text();
     (strProxy == strDefaultProxyGUI.toStdString())
@@ -323,7 +342,8 @@ QValidator::State ProxyAddressValidator::validate(QString &input,
                                                   int &pos) const {
     Q_UNUSED(pos);
     // Validate the proxy
-    CService serv(LookupNumeric(input.toStdString().c_str(), 9050));
+    CService serv(
+        LookupNumeric(input.toStdString().c_str(), DEFAULT_GUI_PROXY_PORT));
     proxyType addrProxy = proxyType(serv, true);
     if (addrProxy.IsValid()) return QValidator::Acceptable;
 

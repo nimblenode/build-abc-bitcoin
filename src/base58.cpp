@@ -2,19 +2,15 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "base58.h"
+#include <base58.h>
 
-#include "hash.h"
-#include "script/script.h"
-#include "uint256.h"
+#include <hash.h>
+#include <uint256.h>
+#include <utilstrencodings.h>
 
-#include <boost/variant/apply_visitor.hpp>
-#include <boost/variant/static_visitor.hpp>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
-#include <string>
-#include <vector>
 
 /** All alphanumeric characters except for "0", "I", "O", and "l" */
 static const char *pszBase58 =
@@ -22,7 +18,7 @@ static const char *pszBase58 =
 
 bool DecodeBase58(const char *psz, std::vector<uint8_t> &vch) {
     // Skip leading spaces.
-    while (*psz && isspace(*psz)) {
+    while (*psz && IsSpace(*psz)) {
         psz++;
     }
     // Skip and count leading '1's.
@@ -37,7 +33,7 @@ bool DecodeBase58(const char *psz, std::vector<uint8_t> &vch) {
     int size = strlen(psz) * 733 / 1000 + 1;
     std::vector<uint8_t> b256(size);
     // Process the characters.
-    while (*psz && !isspace(*psz)) {
+    while (*psz && !IsSpace(*psz)) {
         // Decode base58 character
         const char *ch = strchr(pszBase58, *psz);
         if (ch == nullptr) {
@@ -57,7 +53,7 @@ bool DecodeBase58(const char *psz, std::vector<uint8_t> &vch) {
         psz++;
     }
     // Skip trailing spaces.
-    while (isspace(*psz)) {
+    while (IsSpace(*psz)) {
         psz++;
     }
     if (*psz != 0) {
@@ -120,7 +116,7 @@ std::string EncodeBase58(const uint8_t *pbegin, const uint8_t *pend) {
 }
 
 std::string EncodeBase58(const std::vector<uint8_t> &vch) {
-    return EncodeBase58(&vch[0], &vch[0] + vch.size());
+    return EncodeBase58(vch.data(), vch.data() + vch.size());
 }
 
 bool DecodeBase58(const std::string &str, std::vector<uint8_t> &vchRet) {
@@ -140,9 +136,9 @@ bool DecodeBase58Check(const char *psz, std::vector<uint8_t> &vchRet) {
         vchRet.clear();
         return false;
     }
-    // re-calculate the checksum, insure it matches the included 4-byte checksum
+    // re-calculate the checksum, ensure it matches the included 4-byte checksum
     uint256 hash = Hash(vchRet.begin(), vchRet.end() - 4);
-    if (memcmp(&hash, &vchRet.end()[-4], 4) != 0) {
+    if (memcmp(&hash, &vchRet[vchRet.size() - 4], 4) != 0) {
         vchRet.clear();
         return false;
     }
@@ -152,151 +148,4 @@ bool DecodeBase58Check(const char *psz, std::vector<uint8_t> &vchRet) {
 
 bool DecodeBase58Check(const std::string &str, std::vector<uint8_t> &vchRet) {
     return DecodeBase58Check(str.c_str(), vchRet);
-}
-
-CBase58Data::CBase58Data() {
-    vchVersion.clear();
-    vchData.clear();
-}
-
-void CBase58Data::SetData(const std::vector<uint8_t> &vchVersionIn,
-                          const void *pdata, size_t nSize) {
-    vchVersion = vchVersionIn;
-    vchData.resize(nSize);
-    if (!vchData.empty()) {
-        memcpy(&vchData[0], pdata, nSize);
-    }
-}
-
-void CBase58Data::SetData(const std::vector<uint8_t> &vchVersionIn,
-                          const uint8_t *pbegin, const uint8_t *pend) {
-    SetData(vchVersionIn, (void *)pbegin, pend - pbegin);
-}
-
-bool CBase58Data::SetString(const char *psz, unsigned int nVersionBytes) {
-    std::vector<uint8_t> vchTemp;
-    bool rc58 = DecodeBase58Check(psz, vchTemp);
-    if ((!rc58) || (vchTemp.size() < nVersionBytes)) {
-        vchData.clear();
-        vchVersion.clear();
-        return false;
-    }
-    vchVersion.assign(vchTemp.begin(), vchTemp.begin() + nVersionBytes);
-    vchData.resize(vchTemp.size() - nVersionBytes);
-    if (!vchData.empty()) {
-        memcpy(&vchData[0], &vchTemp[nVersionBytes], vchData.size());
-    }
-    memory_cleanse(&vchTemp[0], vchTemp.size());
-    return true;
-}
-
-bool CBase58Data::SetString(const std::string &str) {
-    return SetString(str.c_str());
-}
-
-std::string CBase58Data::ToString() const {
-    std::vector<uint8_t> vch = vchVersion;
-    vch.insert(vch.end(), vchData.begin(), vchData.end());
-    return EncodeBase58Check(vch);
-}
-
-int CBase58Data::CompareTo(const CBase58Data &b58) const {
-    if (vchVersion < b58.vchVersion) return -1;
-    if (vchVersion > b58.vchVersion) return 1;
-    if (vchData < b58.vchData) return -1;
-    if (vchData > b58.vchData) return 1;
-    return 0;
-}
-
-namespace {
-class DestinationEncoder : public boost::static_visitor<std::string> {
-private:
-    const CChainParams &m_params;
-
-public:
-    explicit DestinationEncoder(const CChainParams &params)
-        : m_params(params) {}
-
-    std::string operator()(const CKeyID &id) const {
-        std::vector<uint8_t> data =
-            m_params.Base58Prefix(CChainParams::PUBKEY_ADDRESS);
-        data.insert(data.end(), id.begin(), id.end());
-        return EncodeBase58Check(data);
-    }
-
-    std::string operator()(const CScriptID &id) const {
-        std::vector<uint8_t> data =
-            m_params.Base58Prefix(CChainParams::SCRIPT_ADDRESS);
-        data.insert(data.end(), id.begin(), id.end());
-        return EncodeBase58Check(data);
-    }
-
-    std::string operator()(const CNoDestination &no) const { return ""; }
-};
-
-CTxDestination DecodeDestination(const std::string &str,
-                                 const CChainParams &params) {
-    std::vector<uint8_t> data;
-    uint160 hash;
-    if (!DecodeBase58Check(str, data)) {
-        return CNoDestination();
-    }
-    // Base58Check decoding
-    const std::vector<uint8_t> &pubkey_prefix =
-        params.Base58Prefix(CChainParams::PUBKEY_ADDRESS);
-    if (data.size() == 20 + pubkey_prefix.size() &&
-        std::equal(pubkey_prefix.begin(), pubkey_prefix.end(), data.begin())) {
-        memcpy(hash.begin(), &data[pubkey_prefix.size()], 20);
-        return CKeyID(hash);
-    }
-    const std::vector<uint8_t> &script_prefix =
-        params.Base58Prefix(CChainParams::SCRIPT_ADDRESS);
-    if (data.size() == 20 + script_prefix.size() &&
-        std::equal(script_prefix.begin(), script_prefix.end(), data.begin())) {
-        memcpy(hash.begin(), &data[script_prefix.size()], 20);
-        return CScriptID(hash);
-    }
-    return CNoDestination();
-}
-} // namespace
-
-void CBitcoinSecret::SetKey(const CKey &vchSecret) {
-    assert(vchSecret.IsValid());
-    SetData(Params().Base58Prefix(CChainParams::SECRET_KEY), vchSecret.begin(),
-            vchSecret.size());
-    if (vchSecret.IsCompressed()) vchData.push_back(1);
-}
-
-CKey CBitcoinSecret::GetKey() {
-    CKey ret;
-    assert(vchData.size() >= 32);
-    ret.Set(vchData.begin(), vchData.begin() + 32,
-            vchData.size() > 32 && vchData[32] == 1);
-    return ret;
-}
-
-bool CBitcoinSecret::IsValid() const {
-    bool fExpectedFormat =
-        vchData.size() == 32 || (vchData.size() == 33 && vchData[32] == 1);
-    bool fCorrectVersion =
-        vchVersion == Params().Base58Prefix(CChainParams::SECRET_KEY);
-    return fExpectedFormat && fCorrectVersion;
-}
-
-bool CBitcoinSecret::SetString(const char *pszSecret) {
-    return CBase58Data::SetString(pszSecret) && IsValid();
-}
-
-bool CBitcoinSecret::SetString(const std::string &strSecret) {
-    return SetString(strSecret.c_str());
-}
-
-std::string EncodeLegacyAddr(const CTxDestination &dest,
-                             const CChainParams &params) {
-    return boost::apply_visitor(DestinationEncoder(params), dest);
-}
-
-CTxDestination DecodeLegacyAddr(const std::string &str,
-                                const CChainParams &params) {
-    return DecodeDestination(str, params);
 }

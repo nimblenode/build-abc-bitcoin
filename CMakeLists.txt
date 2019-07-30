@@ -19,9 +19,16 @@ if(CCACHE)
 	set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK ${CCACHE})
 endif(CCACHE)
 
-# Add the magic taret check and check-all
+# Default to RelWithDebInfo configuration
+if(NOT CMAKE_BUILD_TYPE)
+	set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING
+		"Select the configuration for the build" FORCE)
+endif()
+
+# Add the magic targets `check` and `check-all`
 add_custom_target(check-all)
 add_custom_target(check)
 
 add_subdirectory(src)
 add_subdirectory(test)
+add_subdirectory(doc)

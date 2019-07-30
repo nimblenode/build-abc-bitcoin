@@ -3,25 +3,25 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "txdb.h"
+#include <txdb.h>
 
-#include "chainparams.h"
-#include "hash.h"
-#include "init.h"
-#include "pow.h"
-#include "random.h"
-#include "ui_interface.h"
-#include "uint256.h"
-#include "util.h"
+#include <chain.h>
+#include <chainparams.h>
+#include <hash.h>
+#include <init.h>
+#include <pow.h>
+#include <random.h>
+#include <ui_interface.h>
+#include <uint256.h>
+#include <util.h>
 
-#include <boost/thread.hpp>
+#include <boost/thread.hpp> // boost::this_thread::interruption_point() (mingw)
 
 #include <cstdint>
 
 static const char DB_COIN = 'C';
 static const char DB_COINS = 'c';
 static const char DB_BLOCK_FILES = 'f';
-static const char DB_TXINDEX = 't';
 static const char DB_BLOCK_INDEX = 'b';
 
 static const char DB_BEST_BLOCK = 'B';
@@ -46,7 +46,7 @@ struct CoinEntry {
 
     template <typename Stream> void Unserialize(Stream &s) {
         s >> key;
-        uint256 id;
+        TxId id;
         s >> id;
         uint32_t n = 0;
         s >> VARINT(n);
@@ -153,8 +153,10 @@ size_t CCoinsViewDB::EstimateSize() const {
 }
 
 CBlockTreeDB::CBlockTreeDB(size_t nCacheSize, bool fMemory, bool fWipe)
-    : CDBWrapper(GetDataDir() / "blocks" / "index", nCacheSize, fMemory,
-                 fWipe) {}
+    : CDBWrapper(gArgs.IsArgSet("-blocksdir")
+                     ? GetDataDir() / "blocks" / "index"
+                     : GetBlocksDir() / "index",
+                 nCacheSize, fMemory, fWipe) {}
 
 bool CBlockTreeDB::ReadBlockFileInfo(int nFile, CBlockFileInfo &info) {
     return Read(std::make_pair(DB_BLOCK_FILES, nFile), info);
@@ -249,20 +251,6 @@ bool CBlockTreeDB::WriteBatchSync(
     return WriteBatch(batch, true);
 }
 
-bool CBlockTreeDB::ReadTxIndex(const uint256 &txid, CDiskTxPos &pos) {
-    return Read(std::make_pair(DB_TXINDEX, txid), pos);
-}
-
-bool CBlockTreeDB::WriteTxIndex(
-    const std::vector<std::pair<uint256, CDiskTxPos>> &vect) {
-    CDBBatch batch(*this);
-    for (std::vector<std::pair<uint256, CDiskTxPos>>::const_iterator it =
-             vect.begin();
-         it != vect.end(); it++)
-        batch.Write(std::make_pair(DB_TXINDEX, it->first), it->second);
-    return WriteBatch(batch);
-}
-
 bool CBlockTreeDB::WriteFlag(const std::string &name, bool fValue) {
     return Write(std::make_pair(DB_FLAG, name), fValue ? '1' : '0');
 }
@@ -292,7 +280,7 @@ bool CBlockTreeDB::LoadBlockIndexGuts(
 
         CDiskBlockIndex diskindex;
         if (!pcursor->GetValue(diskindex)) {
-            return error("LoadBlockIndex() : failed to read value");
+            return error("%s : failed to read value", __func__);
         }
 
         // Construct block index object
@@ -312,7 +300,7 @@ bool CBlockTreeDB::LoadBlockIndexGuts(
 
         if (!CheckProofOfWork(pindexNew->GetBlockHash(), pindexNew->nBits,
                               config)) {
-            return error("LoadBlockIndex(): CheckProofOfWork failed: %s",
+            return error("%s: CheckProofOfWork failed: %s", __func__,
                          pindexNew->ToString());
         }
 
@@ -367,7 +355,7 @@ public:
         vout.assign(vAvail.size(), CTxOut());
         for (size_t i = 0; i < vAvail.size(); i++) {
             if (vAvail[i]) {
-                ::Unserialize(s, REF(CTxOutCompressor(vout[i])));
+                ::Unserialize(s, CTxOutCompressor(vout[i]));
             }
         }
         // coinbase height

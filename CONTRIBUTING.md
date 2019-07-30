@@ -66,13 +66,14 @@ Here are some handy links for development practices aligned with Bitcoin ABC:
 - [Statement of Bitcoin ABC Values and Visions](https://www.yours.org/content/bitcoin-abc---our-values-and-vision-a282afaade7c)
 - [How to Do Code Reviews Like a Human - Part 1](https://mtlynch.io/human-code-reviews-1/) 
 - [How to Do Code Reviews Like a Human - Part 2](https://mtlynch.io/human-code-reviews-2/)
-- [Adversarial vs Collaborative Communication Styles](http://www.nehrlich.com/blog/2008/05/23/adversarial-vs-collaborative-communication-styles/)
 - [Large Diffs Are Hurting Your Ability To Ship](https://medium.com/@kurtisnusbaum/large-diffs-are-hurting-your-ability-to-ship-e0b2b41e8acf)
 - [Stacked Diffs: Keeping Phabricator Diffs Small](https://medium.com/@kurtisnusbaum/stacked-diffs-keeping-phabricator-diffs-small-d9964f4dcfa6)
 - [Parallel Implementations](https://www.gamasutra.com/view/news/128325/Opinion_Parallel_Implementations.php)
 - [The Pragmatic Programmer: From Journeyman to Master](https://www.amazon.com/Pragmatic-Programmer-Journeyman-Master/dp/020161622X)
 - [Advantages of monolithic version control](https://danluu.com/monorepo/)
 - [The importance of fixing bugs immediately](https://youtu.be/E2MIpi8pIvY?t=16m0s)
+- [Slow Deployment Causes Meetings](https://www.facebook.com/notes/kent-beck/slow-deployment-causes-meetings/1055427371156793/)
+- [Good Work, Great Work, and Right Work](https://forum.dlang.org/post/q7u6g1$94p$1@digitalmars.com)
 
 
 Getting set up with the Bitcoin ABC Repository
@@ -99,7 +100,7 @@ Enter a file in which to save the key (/home/*username*/.ssh/id_rsa): [Press ent
 
 4. Upload your SSH public key to reviews.bitcoinabc.org
 
-  - go to: `https://reviews.bitcoinabc.org/settings/user/*username*/page/ssh/`
+  - Go to: `https://reviews.bitcoinabc.org/settings/user/*username*/page/ssh/`
 
   - Under "SSH Key Actions", Select "Upload Public Key"
 
@@ -123,9 +124,17 @@ Follow instructions provided by `arc install-certificate` to provide your API to
 
 6. Code formatting tools
 
+During submission of patches, arcanist will automatically run `arc lint` to
+enforce Bitcoin ABC code formatting standards, and often suggests changes.
 If code formatting tools do not install automatically on your system, you
-may have to install clang-format-7, autopep8 and flake8. clang-format-7 can be
-installed from https://releases.llvm.org/download.html or https://apt.llvm.org
+will have to install clang-format-7, autopep8 and flake8.
+
+To install clang-format-7 on Ubuntu (>= 18.04+updates) or Debian (>= 10):
+```
+sudo apt-get install clang-format-7
+```
+If not available in the distribution, clang-format-7 can be installed from
+https://releases.llvm.org/download.html or https://apt.llvm.org
 
 To install autopep8 and flake8 on Ubuntu:
 ```
@@ -173,7 +182,7 @@ as the Diff number, reviewers, etc.).
 
 - When reviewers approve your Diff, it should be listed as "ready to Land"
 in Phabricator. When you want to commit your diff to the repository, check out
-type my-topic-branch in git, then type `arc land`. You have now succesfully
+type my-topic-branch in git, then type `arc land`. You have now successfully
 committed a change to the Bitcoin ABC repository.
 
 - When reviewing a Diff, apply the changeset on your local by using

@@ -2,19 +2,19 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "dbwrapper.h"
+#include <dbwrapper.h>
 
-#include "random.h"
-#include "util.h"
+#include <fs.h>
+#include <random.h>
+#include <util.h>
 
-#include <boost/filesystem.hpp>
-
-#include <algorithm>
-#include <cstdint>
 #include <leveldb/cache.h>
 #include <leveldb/env.h>
 #include <leveldb/filter_policy.h>
 #include <memenv.h>
+
+#include <algorithm>
+#include <cstdint>
 
 class CBitcoinLevelDBLogger : public leveldb::Logger {
 public:
@@ -208,17 +208,11 @@ void HandleError(const leveldb::Status &status) {
     if (status.ok()) {
         return;
     }
-    LogPrintf("%s\n", status.ToString());
-    if (status.IsCorruption()) {
-        throw dbwrapper_error("Database corrupted");
-    }
-    if (status.IsIOError()) {
-        throw dbwrapper_error("Database I/O error");
-    }
-    if (status.IsNotFound()) {
-        throw dbwrapper_error("Database entry missing");
-    }
-    throw dbwrapper_error("Unknown database error");
+    const std::string errmsg = "Fatal LevelDB error: " + status.ToString();
+    LogPrintf("%s\n", errmsg);
+    LogPrintf("You can use -debug=leveldb to get more complete diagnostic "
+              "messages\n");
+    throw dbwrapper_error(errmsg);
 }
 
 const std::vector<uint8_t> &GetObfuscateKey(const CDBWrapper &w) {

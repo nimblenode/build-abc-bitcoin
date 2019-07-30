@@ -3,14 +3,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "script/sign.h"
+#include <script/sign.h>
 
-#include "key.h"
-#include "keystore.h"
-#include "policy/policy.h"
-#include "primitives/transaction.h"
-#include "script/standard.h"
-#include "uint256.h"
+#include <key.h>
+#include <keystore.h>
+#include <policy/policy.h>
+#include <primitives/transaction.h>
+#include <script/standard.h>
+#include <uint256.h>
 
 typedef std::vector<uint8_t> valtype;
 
@@ -142,10 +142,9 @@ static CScript PushAll(const std::vector<valtype> &values) {
 bool ProduceSignature(const BaseSignatureCreator &creator,
                       const CScript &fromPubKey, SignatureData &sigdata) {
     CScript script = fromPubKey;
-    bool solved = true;
     std::vector<valtype> result;
     txnouttype whichType;
-    solved = SignStep(creator, script, result, whichType);
+    bool solved = SignStep(creator, script, result, whichType);
     CScript subscript;
 
     if (solved && whichType == TX_SCRIPTHASH) {
@@ -175,10 +174,14 @@ SignatureData DataFromTransaction(const CMutableTransaction &tx,
     return data;
 }
 
+void UpdateInput(CTxIn &input, const SignatureData &data) {
+    input.scriptSig = data.scriptSig;
+}
+
 void UpdateTransaction(CMutableTransaction &tx, unsigned int nIn,
                        const SignatureData &data) {
     assert(tx.vin.size() > nIn);
-    tx.vin[nIn].scriptSig = data.scriptSig;
+    UpdateInput(tx.vin[nIn], data);
 }
 
 bool SignSignature(const CKeyStore &keystore, const CScript &fromPubKey,

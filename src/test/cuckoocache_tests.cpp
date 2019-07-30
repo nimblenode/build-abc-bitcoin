@@ -2,14 +2,15 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "cuckoocache.h"
-#include "random.h"
-#include "script/sigcache.h"
-#include "test/test_bitcoin.h"
+#include <cuckoocache.h>
 
-#include <boost/thread/shared_mutex.hpp>
+#include <random.h>
+#include <script/sigcache.h>
+
+#include <test/test_bitcoin.h>
 
 #include <boost/test/unit_test.hpp>
+#include <boost/thread/shared_mutex.hpp>
 
 /** Test Suite for CuckooCache
  *
@@ -23,19 +24,7 @@
  *  expected behavior. For example improving the hit rate may cause some tests
  *  using BOOST_CHECK_CLOSE to fail.
  */
-FastRandomContext local_rand_ctx(true);
-
 BOOST_AUTO_TEST_SUITE(cuckoocache_tests);
-
-/**
- * insecure_GetRandHash fills in a uint256 from local_rand_ctx
- */
-void insecure_GetRandHash(uint256 &t) {
-    uint32_t *ptr = (uint32_t *)t.begin();
-    for (uint8_t j = 0; j < 8; ++j) {
-        *(ptr++) = local_rand_ctx.rand32();
-    }
-}
 
 /**
  * Test that no values not inserted into the cache are read out of it.
@@ -43,17 +32,15 @@ void insecure_GetRandHash(uint256 &t) {
  * There are no repeats in the first 200000 insecure_GetRandHash calls
  */
 BOOST_AUTO_TEST_CASE(test_cuckoocache_no_fakes) {
-    local_rand_ctx = FastRandomContext(true);
+    SeedInsecureRand(true);
     CuckooCache::cache<uint256, SignatureCacheHasher> cc{};
-    cc.setup_bytes(32 << 20);
-    uint256 v;
+    size_t megabytes = 4;
+    cc.setup_bytes(megabytes << 20);
     for (int x = 0; x < 100000; ++x) {
-        insecure_GetRandHash(v);
-        cc.insert(v);
+        cc.insert(InsecureRand256());
     }
     for (int x = 0; x < 100000; ++x) {
-        insecure_GetRandHash(v);
-        BOOST_CHECK(!cc.contains(v, false));
+        BOOST_CHECK(!cc.contains(InsecureRand256(), false));
     }
 };
 
@@ -61,8 +48,9 @@ BOOST_AUTO_TEST_CASE(test_cuckoocache_no_fakes) {
  * This helper returns the hit rate when megabytes*load worth of entries are
  * inserted into a megabytes sized cache
  */
-template <typename Cache> double test_cache(size_t megabytes, double load) {
-    local_rand_ctx = FastRandomContext(true);
+template <typename Cache>
+static double test_cache(size_t megabytes, double load) {
+    SeedInsecureRand(true);
     std::vector<uint256> hashes;
     Cache set{};
     size_t bytes = megabytes * (1 << 20);
@@ -72,7 +60,7 @@ template <typename Cache> double test_cache(size_t megabytes, double load) {
     for (uint32_t i = 0; i < n_insert; ++i) {
         uint32_t *ptr = (uint32_t *)hashes[i].begin();
         for (uint8_t j = 0; j < 8; ++j) {
-            *(ptr++) = local_rand_ctx.rand32();
+            *(ptr++) = InsecureRand32();
         }
     }
     /**
@@ -111,7 +99,7 @@ template <typename Cache> double test_cache(size_t megabytes, double load) {
  * how you measure around load 1.0 as after load 1.0 your normalized hit rate
  * becomes effectively perfect, ignoring freshness.
  */
-double normalize_hit_rate(double hits, double load) {
+static double normalize_hit_rate(double hits, double load) {
     return hits * std::max(load, 1.0);
 }
 
@@ -122,7 +110,7 @@ BOOST_AUTO_TEST_CASE(cuckoocache_hit_rate_ok) {
      * test as a lower bound on performance.
      */
     double HitRateThresh = 0.98;
-    size_t megabytes = 32;
+    size_t megabytes = 4;
     for (double load = 0.1; load < 2; load *= 2) {
         double hits =
             test_cache<CuckooCache::cache<uint256, SignatureCacheHasher>>(
@@ -133,9 +121,9 @@ BOOST_AUTO_TEST_CASE(cuckoocache_hit_rate_ok) {
 
 /** This helper checks that erased elements are preferentially inserted onto and
  * that the hit rate of "fresher" keys is reasonable*/
-template <typename Cache> void test_cache_erase(size_t megabytes) {
+template <typename Cache> static void test_cache_erase(size_t megabytes) {
     double load = 1;
-    local_rand_ctx = FastRandomContext(true);
+    SeedInsecureRand(true);
     std::vector<uint256> hashes;
     Cache set{};
     size_t bytes = megabytes * (1 << 20);
@@ -145,7 +133,7 @@ template <typename Cache> void test_cache_erase(size_t megabytes) {
     for (uint32_t i = 0; i < n_insert; ++i) {
         uint32_t *ptr = (uint32_t *)hashes[i].begin();
         for (uint8_t j = 0; j < 8; ++j) {
-            *(ptr++) = local_rand_ctx.rand32();
+            *(ptr++) = InsecureRand32();
         }
     }
     /** We make a copy of the hashes because future optimizations of the
@@ -197,14 +185,15 @@ template <typename Cache> void test_cache_erase(size_t megabytes) {
 }
 
 BOOST_AUTO_TEST_CASE(cuckoocache_erase_ok) {
-    size_t megabytes = 32;
+    size_t megabytes = 4;
     test_cache_erase<CuckooCache::cache<uint256, SignatureCacheHasher>>(
         megabytes);
 }
 
-template <typename Cache> void test_cache_erase_parallel(size_t megabytes) {
+template <typename Cache>
+static void test_cache_erase_parallel(size_t megabytes) {
     double load = 1;
-    local_rand_ctx = FastRandomContext(true);
+    SeedInsecureRand(true);
     std::vector<uint256> hashes;
     Cache set{};
     size_t bytes = megabytes * (1 << 20);
@@ -214,7 +203,7 @@ template <typename Cache> void test_cache_erase_parallel(size_t megabytes) {
     for (uint32_t i = 0; i < n_insert; ++i) {
         uint32_t *ptr = (uint32_t *)hashes[i].begin();
         for (uint8_t j = 0; j < 8; ++j) {
-            *(ptr++) = local_rand_ctx.rand32();
+            *(ptr++) = InsecureRand32();
         }
     }
     /** We make a copy of the hashes because future optimizations of the
@@ -290,12 +279,12 @@ template <typename Cache> void test_cache_erase_parallel(size_t megabytes) {
 }
 
 BOOST_AUTO_TEST_CASE(cuckoocache_erase_parallel_ok) {
-    size_t megabytes = 32;
+    size_t megabytes = 4;
     test_cache_erase_parallel<
         CuckooCache::cache<uint256, SignatureCacheHasher>>(megabytes);
 }
 
-template <typename Cache> void test_cache_generations() {
+template <typename Cache> static void test_cache_generations() {
     // This test checks that for a simulation of network activity, the fresh hit
     // rate is never below 99%, and the number of times that it is worse than
     // 99.9% are less than 1% of the time.
@@ -313,7 +302,7 @@ template <typename Cache> void test_cache_generations() {
     // iterations with non-deterministic values, so it isn't "overfit" to the
     // specific entropy in FastRandomContext(true) and implementation of the
     // cache.
-    local_rand_ctx = FastRandomContext(true);
+    SeedInsecureRand(true);
 
     // block_activity models a chunk of network activity. n_insert elements are
     // adde to the cache. The first and last n/4 are stored for removal later
@@ -329,7 +318,7 @@ template <typename Cache> void test_cache_generations() {
             for (uint32_t i = 0; i < n_insert; ++i) {
                 uint32_t *ptr = (uint32_t *)inserts[i].begin();
                 for (uint8_t j = 0; j < 8; ++j) {
-                    *(ptr++) = local_rand_ctx.rand32();
+                    *(ptr++) = InsecureRand32();
                 }
             }
             for (uint32_t i = 0; i < n_insert / 4; ++i) {
@@ -344,13 +333,13 @@ template <typename Cache> void test_cache_generations() {
         }
     };
 
-    const uint32_t BLOCK_SIZE = 10000;
+    const uint32_t BLOCK_SIZE = 1000;
     // We expect window size 60 to perform reasonably given that each epoch
     // stores 45% of the cache size (~472k).
     const uint32_t WINDOW_SIZE = 60;
     const uint32_t POP_AMOUNT = (BLOCK_SIZE / WINDOW_SIZE) / 2;
     const double load = 10;
-    const size_t megabytes = 32;
+    const size_t megabytes = 4;
     const size_t bytes = megabytes * (1 << 20);
     const uint32_t n_insert =
         static_cast<uint32_t>(load * (bytes / sizeof(uint256)));
@@ -382,7 +371,7 @@ template <typename Cache> void test_cache_generations() {
         // Loose Check that hit rate is above min_hit_rate
         BOOST_CHECK(hit > min_hit_rate);
         // Tighter check, count number of times we are less than tight_hit_rate
-        // (and implicityly, greater than min_hit_rate)
+        // (and implicitly, greater than min_hit_rate)
         out_of_tight_tolerance += hit < tight_hit_rate;
     }
     // Check that being out of tolerance happens less than

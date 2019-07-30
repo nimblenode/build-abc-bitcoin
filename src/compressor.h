@@ -6,9 +6,9 @@
 #ifndef BITCOIN_COMPRESSOR_H
 #define BITCOIN_COMPRESSOR_H
 
-#include "primitives/transaction.h"
-#include "script/script.h"
-#include "serialize.h"
+#include <primitives/transaction.h>
+#include <script/script.h>
+#include <serialize.h>
 
 class CKeyID;
 class CPubKey;
@@ -73,7 +73,7 @@ public:
         s >> VARINT(nSize);
         if (nSize < nSpecialScripts) {
             std::vector<uint8_t> vch(GetSpecialSize(nSize), 0x00);
-            s >> REF(CFlatData(vch));
+            s >> CFlatData(vch);
             Decompress(nSize, vch);
             return;
         }
@@ -84,7 +84,7 @@ public:
             s.ignore(nSize);
         } else {
             script.resize(nSize);
-            s >> REF(CFlatData(script));
+            s >> CFlatData(script);
         }
     }
 };

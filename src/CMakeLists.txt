@@ -3,7 +3,7 @@
 cmake_minimum_required(VERSION 3.5)
 project(BitcoinABC)
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 14)
 
 # Default visibility is hidden on all targets.
 set(CMAKE_C_VISIBILITY_PRESET hidden)
@@ -15,15 +15,112 @@ option(BUILD_BITCOIN_SEEDER "Build bitcoin-seeder" ON)
 option(BUILD_BITCOIN_CLI "Build bitcoin-cli" ON)
 option(BUILD_BITCOIN_TX "Build bitcoin-tx" ON)
 option(BUILD_BITCOIN_QT "Build bitcoin-qt" ON)
+option(ENABLE_HARDENING "Harden the executables" ON)
+option(ENABLE_REDUCE_EXPORTS "Reduce the amount of exported symbols" OFF)
+option(ENABLE_STATIC_LIBSTDCXX "Statically link libstdc++" OFF)
+option(ENABLE_GLIBC_BACK_COMPAT "Enable Glibc compatibility features" OFF)
+option(ENABLE_QRCODE "Enable QR code display" ON)
+option(ENABLE_UPNP "Enable UPnP support" ON)
+option(START_WITH_UPNP "Make UPnP the default to map ports" OFF)
+
+# Allow usage of sanitizers by setting ECM_ENABLE_SANITIZERS
+if(ENABLE_SANITIZERS)
+	set(ECM_ENABLE_SANITIZERS ${ENABLE_SANITIZERS})
+	find_package(ECM NO_MODULE)
+	if(ECM_MODULE_PATH)
+		list(APPEND CMAKE_MODULE_PATH ${ECM_MODULE_PATH})
+		include(ECMEnableSanitizers)
+	else()
+		message(FATAL_ERROR
+			"ECM is required to enable the sanitizers (https://api.kde.org/ecm/index.html)"
+		)
+	endif()
+endif()
+
+# Cmake uses the CMAKE_BUILD_TYPE variable to select the build configuration.
+# By default it supports more configurations that needed for Bitcoin ABC, and
+# all the releases types set NDEBUG which is unwanted as it disables the assert
+# completely.
+# Remove the -DNDEBUG flag from the CFLAGS/CXXFLAGS in all the configurations
+include(AddCompilerFlags)
+remove_compiler_flags(-DNDEBUG)
+
+# Overrides the flags for the Debug build type
+# This mimics the autotools behavior by setting the CFLAGS to '-g -O2`, which
+# are not well suited for debugging.
+# FIXME: update CFLAGS with better debug oriented optimization flags
+set(CMAKE_C_FLAGS_DEBUG "-g -O2")
+
+# Prefer -g3, defaults to -g if unavailable
+add_cxx_compiler_flag_with_fallback(CMAKE_CXX_FLAGS_DEBUG -g3 -g)
+
+# Prefer -Og, defaults to -O0 if unavailable
+add_cxx_compiler_flag_with_fallback(CMAKE_CXX_FLAGS_DEBUG -Og -O0)
+
+# Define the debugging symbols DEBUG and DEBUG_LOCKORDER when the Debug build
+# type is selected.
+string(APPEND CMAKE_CXX_FLAGS_DEBUG " -DDEBUG -DDEBUG_LOCKORDER")
 
 # Ensure that WINDRES_PREPROC is enabled when using windres.
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+	# Ensure that WINDRES_PREPROC is enabled when using windres.
 	list(APPEND CMAKE_RC_FLAGS "-DWINDRES_PREPROC")
+
+	# Build all static so there is no dll file to distribute.
+	add_compiler_flag(-static)
+endif()
+
+if(ENABLE_REDUCE_EXPORTS)
+	# Default visibility is set by CMAKE_<LANG>_VISIBILITY_PRESET, but this
+	# doesn't tell if the visibility set is effective.
+	# Check if the flag -fvisibility=hidden is supported, as using the hidden
+	# visibility is a requirement to reduce exports.
+	check_compiler_flag(HAS_CXX_FVISIBILITY CXX -fvisibility=hidden)
+	if(NOT HAS_CXX_FVISIBILITY)
+		message(FATAL_ERROR "Cannot set default symbol visibility. Use -DENABLE_REDUCE_EXPORTS=OFF.")
+	endif()
+
+	# Also hide symbols from static libraries
+	add_linker_flag(-Wl,--exclude-libs,ALL)
+endif()
+
+# Enable statically linking libstdc++
+if(ENABLE_STATIC_LIBSTDCXX)
+	add_linker_flag(-static-libstdc++)
+endif()
+
+# All windows code is PIC, forcing it on just adds useless compile warnings
+if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+	add_compiler_flag(-fPIC)
+endif()
+
+if(ENABLE_HARDENING)
+	# Enable stack protection
+	add_cxx_compiler_flag(-fstack-protector-all -Wstack-protector)
+
+	# Enable some buffer overflow checking
+	add_compiler_flag(-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2)
+
+	# Enable ASLR (these flags are primarily targeting MinGw)
+	add_linker_flag(-Wl,--dynamicbase -Wl,--nxcompat -Wl,--high-entropy-va)
+
+	# Make the relocated sections read-only
+	add_linker_flag(-Wl,-z,relro -Wl,-z,now)
+
+	# CMake provides the POSITION_INDEPENDENT_CODE property to set PIC/PIE.
+	# Unfortunately setting the -pie linker flag this way require CMake >= 3.14,
+	# which is not widely distributed at the time of writing.
+	# FIXME: use the POSITION_INDEPENDENT_CODE property instead
+	if(NOT ${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+		add_compiler_flag(-fPIE)
+		add_linker_flag(-pie)
+	else()
+		# MinGw provides its own libssp for stack smashing protection
+		link_libraries(ssp)
+	endif()
 endif()
 
 # Enable warning
-include(AddCompilerFlags)
-
 add_c_compiler_flag(-Wnested-externs -Wstrict-prototypes)
 add_compiler_flag(
 	-Wall
@@ -44,6 +141,7 @@ if(EXTRA_WARNINGS)
 	add_cxx_compiler_flag(-Wsuggest-override)
 else()
 	add_compiler_flag(-Wno-unused-parameter)
+	add_compiler_flag(-Wno-implicit-fallthrough)
 endif()
 
 # Create a target for OpenSSL
@@ -61,7 +159,7 @@ add_subdirectory(secp256k1)
 add_subdirectory(univalue)
 
 # Because the Bitcoin ABc source code is disorganised, we
-# end up with a bunch of libraries without any aparent
+# end up with a bunch of libraries without any apparent
 # cohesive structure. This is inherited from Bitcoin Core
 # and reflecting this.
 # TODO: Improve the structure once cmake is rocking.
@@ -78,6 +176,7 @@ add_library(util
 	random.cpp
 	rcu.cpp
 	rpc/protocol.cpp
+	rpc/util.cpp
 	support/cleanse.cpp
 	support/lockedpool.cpp
 	sync.cpp
@@ -87,6 +186,7 @@ add_library(util
 	utilmoneystr.cpp
 	utilstrencodings.cpp
 	utiltime.cpp
+	util/bytevectorhash.cpp
 )
 
 target_compile_definitions(util PUBLIC HAVE_CONFIG_H)
@@ -96,6 +196,44 @@ target_include_directories(util
 		# To access the config.
 		${CMAKE_CURRENT_BINARY_DIR}
 )
+
+if(ENABLE_GLIBC_BACK_COMPAT)
+	# glibc absorbed clock_gettime in 2.17. librt (its previous location) is
+	# safe to link in anyway for back-compat.
+	find_library(RT_LIBRARY rt)
+	target_link_libraries(util ${RT_LIBRARY})
+
+	#__fdelt_chk's params and return type have changed from long unsigned int to
+	# long int. See which one is present here.
+	include(CheckPrototypeDefinition)
+
+	set(CMAKE_REQUIRED_DEFINITIONS -D_FORTIFY_SOURCE=2)
+	# Without some optimization the compiler won't detect the prototype conflict
+	# and always succeed to build.
+	set(CMAKE_REQUIRED_FLAGS -O2)
+
+	check_prototype_definition(
+		__fdelt_warn
+		"extern long unsigned int __fdelt_warn(long unsigned int a)"
+		"0"
+		"sys/select.h"
+		FDELT_PROTOTYPE_LONG_UNSIGNED_INT
+	)
+
+	if(FDELT_PROTOTYPE_LONG_UNSIGNED_INT)
+		set(FDELT_TYPE "long unsigned int")
+	else()
+		set(FDELT_TYPE "long int")
+	endif()
+
+	target_compile_definitions(util PRIVATE "-DFDELT_TYPE=${FDELT_TYPE}")
+
+	# Wrap some glibc functions with ours
+	add_linker_flag(-Wl,--wrap=__divmoddi4)
+	add_linker_flag(-Wl,--wrap=log2f)
+
+	target_sources(util PRIVATE compat/glibc_compat.cpp)
+endif()
 
 # Target specific configs
 if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
@@ -108,12 +246,12 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
 
 	find_library(WS2_32_LIBRARY NAMES ws2_32)
 	target_link_libraries(util ${WS2_32_LIBRARY})
-	
+
 	target_compile_definitions(util PUBLIC BOOST_THREAD_USE_LIB)
 endif()
 
 # Boost packages
-set(BOOST_PACKAGES_REQUIRED chrono filesystem program_options thread)
+set(BOOST_PACKAGES_REQUIRED chrono filesystem thread)
 
 function(prepend var prefix)
 	set(listVar "")
@@ -143,18 +281,19 @@ add_library(common
 	consensus/merkle.cpp
 	coins.cpp
 	compressor.cpp
-	dstencode.cpp
 	feerate.cpp
 	globals.cpp
 	core_read.cpp
 	core_write.cpp
 	key.cpp
+	key_io.cpp
 	keystore.cpp
 	netaddress.cpp
 	netbase.cpp
 	primitives/block.cpp
 	protocol.cpp
 	scheduler.cpp
+	script/ismine.cpp
 	script/sign.cpp
 	script/standard.cpp
 	warnings.cpp
@@ -169,6 +308,7 @@ add_library(bitcoinconsensus
 	primitives/transaction.cpp
 	pubkey.cpp
 	script/bitcoinconsensus.cpp
+	script/bitfield.cpp
 	script/interpreter.cpp
 	script/script.cpp
 	script/script_error.cpp
@@ -186,15 +326,21 @@ add_library(server
 	avalanche.cpp
 	bloom.cpp
 	blockencodings.cpp
+	blockfilter.cpp
 	chain.cpp
 	checkpoints.cpp
 	config.cpp
 	consensus/activation.cpp
 	consensus/tx_verify.cpp
+	flatfile.cpp
 	globals.cpp
 	httprpc.cpp
 	httpserver.cpp
+	index/base.cpp
+	index/txindex.cpp
 	init.cpp
+	interfaces/handler.cpp
+	interfaces/node.cpp
 	dbwrapper.cpp
 	merkleblock.cpp
 	miner.cpp
@@ -207,16 +353,15 @@ add_library(server
 	rest.cpp
 	rpc/abc.cpp
 	rpc/blockchain.cpp
+	rpc/command.cpp
 	rpc/jsonrpcrequest.cpp
 	rpc/mining.cpp
 	rpc/misc.cpp
 	rpc/net.cpp
 	rpc/rawtransaction.cpp
-	rpc/safemode.cpp
 	rpc/server.cpp
 	script/scriptcache.cpp
 	script/sigcache.cpp
-	script/ismine.cpp
 	timedata.cpp
 	torcontrol.cpp
 	txdb.cpp
@@ -224,7 +369,6 @@ add_library(server
 	ui_interface.cpp
 	validation.cpp
 	validationinterface.cpp
-	versionbits.cpp
 )
 
 # This require libevent
@@ -238,6 +382,24 @@ target_link_libraries(server
 	leveldb
 	memenv
 )
+
+if(ENABLE_UPNP)
+	target_include_directories(server PUBLIC ${MINIUPNPC_INCLUDE_DIR})
+	target_link_libraries(server ${MINIUPNPC_LIBRARY})
+
+	if(${CMAKE_SYSTEM_NAME} MATCHES "Windows")
+		find_library(IPHLPAPI_LIBRARY NAMES iphlpapi)
+		if(NOT IPHLPAPI_LIBRARY)
+			message(FATAL_ERROR "Lib iphlpapi is missing")
+		endif()
+		target_link_libraries(server ${IPHLPAPI_LIBRARY})
+
+		target_compile_definitions(server
+			PUBLIC -DSTATICLIB
+			PUBLIC -DMINIUPNP_STATICLIB
+		)
+	endif()
+endif()
 
 # Test suite.
 add_subdirectory(test)

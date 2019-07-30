@@ -3,7 +3,7 @@
 /**
  * Uses the check-doc.py script to enfore command line arguments documentation
  */
-final class CheckDocLinter extends ArcanistExternalLinter {
+final class CheckDocLinter extends GlobalExternalLinter {
 
   public function getInfoName() {
     return 'check-doc';
@@ -26,28 +26,26 @@ final class CheckDocLinter extends ArcanistExternalLinter {
   }
 
   public function getLinterConfigurationOptions() {
-    $options = array(
-    );
-
+    $options = array();
     return $options + parent::getLinterConfigurationOptions();
   }
 
   public function getDefaultBinary() {
-    return Filesystem::resolvePath(
-      'test/lint/check-doc.py',
+    return Filesystem::resolvePath('test/lint/check-doc.py',
       $this->getProjectRoot());
   }
-  
+
   public function shouldUseInterpreter() {
     return true;
   }
-  
+
   public function getDefaultInterpreter() {
     return "python3";
   }
-  
+
   public function getInstallInstructions() {
-    return pht('The test/lint/check-doc.py script is part of the bitcoin-abc project');
+    return pht('The test/lint/check-doc.py script is part of the bitcoin-abc '.
+      'project');
   }
 
   public function shouldExpectCommandErrors() {
@@ -55,28 +53,27 @@ final class CheckDocLinter extends ArcanistExternalLinter {
   }
 
   protected function getMandatoryFlags() {
-    return array(
-    );
+    return array();
   }
 
-  protected function parseLinterOutput($path, $err, $stdout, $stderr) {
+  protected function parseGlobalLinterOutput($err, $stdout, $stderr) {
     /* Split stdout:
-     * 0 => Empty (before first 'Args' occurence)
+     * 0 => Empty (before first 'Args' occurrence)
      * 1 => Args used: count
      * 2 => Args documented: count
      * 3 => Args undocumented: count and list
      * 4 => Args unknown: count and list
      */
     $stdoutExploded = preg_split('/Args/', $stdout);
-    
+
     $undocumented = $stdoutExploded[3];
     $unknown = $stdoutExploded[4];
 
     $messages = array();
-    
+
     // Undocumented arguments
     $match = preg_match_all('/-[\w|-]+/', $undocumented, $args);
-    foreach($args[0] as $arg) {
+    foreach ($args[0] as $arg) {
       $messages[] = id(new ArcanistLintMessage())
         ->setGranularity(ArcanistLinter::GRANULARITY_GLOBAL)
         ->setCode('ARGDOC')
@@ -84,11 +81,11 @@ final class CheckDocLinter extends ArcanistExternalLinter {
         ->setName('Undocumented argument')
         ->setDescription("'$arg' is undocumented.");
     }
-    
+
     // Unknown arguments
     $match = preg_match_all('/-[\w|-]+/', $unknown, $args);
-    foreach($args[0] as $arg) {
-        $messages[] = id(new ArcanistLintMessage())
+    foreach ($args[0] as $arg) {
+      $messages[] = id(new ArcanistLintMessage())
         ->setGranularity(ArcanistLinter::GRANULARITY_GLOBAL)
         ->setCode('ARGDOC')
         ->setSeverity(ArcanistLintSeverity::SEVERITY_ERROR)
@@ -99,5 +96,3 @@ final class CheckDocLinter extends ArcanistExternalLinter {
     return $messages;
   }
 }
-
-?>

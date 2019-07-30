@@ -2,22 +2,21 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "transactionview.h"
+#include <qt/transactionview.h>
 
-#include "addresstablemodel.h"
-#include "bitcoinunits.h"
-#include "csvmodelwriter.h"
-#include "editaddressdialog.h"
-#include "guiutil.h"
-#include "optionsmodel.h"
-#include "platformstyle.h"
-#include "transactiondescdialog.h"
-#include "transactionfilterproxy.h"
-#include "transactionrecord.h"
-#include "transactiontablemodel.h"
-#include "walletmodel.h"
-
-#include "ui_interface.h"
+#include <qt/addresstablemodel.h>
+#include <qt/bitcoinunits.h>
+#include <qt/csvmodelwriter.h>
+#include <qt/editaddressdialog.h>
+#include <qt/guiutil.h>
+#include <qt/optionsmodel.h>
+#include <qt/platformstyle.h>
+#include <qt/transactiondescdialog.h>
+#include <qt/transactionfilterproxy.h>
+#include <qt/transactionrecord.h>
+#include <qt/transactiontablemodel.h>
+#include <qt/walletmodel.h>
+#include <ui_interface.h>
 
 #include <QComboBox>
 #include <QDateTimeEdit>
@@ -260,7 +259,7 @@ void TransactionView::setModel(WalletModel *_model) {
         }
 
         // show/hide column Watch-only
-        updateWatchOnlyColumn(_model->haveWatchOnly());
+        updateWatchOnlyColumn(_model->wallet().haveWatchOnly());
 
         // Watch-only signal
         connect(_model, SIGNAL(notifyWatchonlyChanged(bool)), this,
@@ -329,8 +328,8 @@ void TransactionView::chooseWatchonly(int idx) {
     }
 
     transactionProxyModel->setWatchOnlyFilter(
-        (TransactionFilterProxy::WatchOnlyFilter)watchOnlyWidget->itemData(idx)
-            .toInt());
+        static_cast<TransactionFilterProxy::WatchOnlyFilter>(
+            watchOnlyWidget->itemData(idx).toInt()));
 }
 
 void TransactionView::changedPrefix(const QString &prefix) {
@@ -356,6 +355,10 @@ void TransactionView::changedAmount(const QString &amount) {
 }
 
 void TransactionView::exportClicked() {
+    if (!model || !model->getOptionsModel()) {
+        return;
+    }
+
     // CSV is currently the only supported format
     QString filename = GUIUtil::getSaveFileName(
         this, tr("Export Transaction History"), QString(),
@@ -370,7 +373,7 @@ void TransactionView::exportClicked() {
     // name, column, role
     writer.setModel(transactionProxyModel);
     writer.addColumn(tr("Confirmed"), 0, TransactionTableModel::ConfirmedRole);
-    if (model && model->haveWatchOnly()) {
+    if (model->wallet().haveWatchOnly()) {
         writer.addColumn(tr("Watch-only"), TransactionTableModel::Watchonly);
     }
     writer.addColumn(tr("Date"), 0, TransactionTableModel::DateRole);
@@ -412,7 +415,7 @@ void TransactionView::contextualMenu(const QPoint &point) {
                     .data(TransactionTableModel::TxHashRole)
                     .toString()
                     .toStdString());
-    abandonAction->setEnabled(model->transactionCanBeAbandoned(txid));
+    abandonAction->setEnabled(model->wallet().transactionCanBeAbandoned(txid));
 
     if (index.isValid()) {
         contextMenu->popup(transactionView->viewport()->mapToGlobal(point));
@@ -435,7 +438,7 @@ void TransactionView::abandonTx() {
     txid.SetHex(hashQStr.toStdString());
 
     // Abandon the wallet transaction over the walletModel
-    model->abandonTransaction(txid);
+    model->wallet().abandonTransaction(txid);
 
     // Update the table
     model->getTransactionTableModel()->updateTransaction(hashQStr, CT_UPDATED,

@@ -2,11 +2,11 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "editaddressdialog.h"
-#include "ui_editaddressdialog.h"
+#include <qt/editaddressdialog.h>
+#include <qt/forms/ui_editaddressdialog.h>
 
-#include "addresstablemodel.h"
-#include "guiutil.h"
+#include <qt/addresstablemodel.h>
+#include <qt/guiutil.h>
 
 #include <QDataWidgetMapper>
 #include <QMessageBox>
@@ -45,7 +45,9 @@ EditAddressDialog::~EditAddressDialog() {
 
 void EditAddressDialog::setModel(AddressTableModel *_model) {
     this->model = _model;
-    if (!_model) return;
+    if (!_model) {
+        return;
+    }
 
     mapper->setModel(_model);
     mapper->addMapping(ui->labelEdit, AddressTableModel::Label);
@@ -57,7 +59,9 @@ void EditAddressDialog::loadRow(int row) {
 }
 
 bool EditAddressDialog::saveCurrentRow() {
-    if (!model) return false;
+    if (!model) {
+        return false;
+    }
 
     switch (mode) {
         case NewReceivingAddress:
@@ -65,7 +69,8 @@ bool EditAddressDialog::saveCurrentRow() {
             address = model->addRow(
                 mode == NewSendingAddress ? AddressTableModel::Send
                                           : AddressTableModel::Receive,
-                ui->labelEdit->text(), ui->addressEdit->text());
+                ui->labelEdit->text(), ui->addressEdit->text(),
+                model->GetDefaultAddressType());
             break;
         case EditReceivingAddress:
         case EditSendingAddress:
@@ -78,7 +83,9 @@ bool EditAddressDialog::saveCurrentRow() {
 }
 
 void EditAddressDialog::accept() {
-    if (!model) return;
+    if (!model) {
+        return;
+    }
 
     if (!saveCurrentRow()) {
         switch (model->getEditStatus()) {
@@ -97,9 +104,7 @@ void EditAddressDialog::accept() {
                 break;
             case AddressTableModel::DUPLICATE_ADDRESS:
                 QMessageBox::warning(this, windowTitle(),
-                                     tr("The entered address \"%1\" is already "
-                                        "in the address book.")
-                                         .arg(ui->addressEdit->text()),
+                                     getDuplicateAddressWarning(),
                                      QMessageBox::Ok, QMessageBox::Ok);
                 break;
             case AddressTableModel::WALLET_UNLOCK_FAILURE:
@@ -116,6 +121,25 @@ void EditAddressDialog::accept() {
         return;
     }
     QDialog::accept();
+}
+
+QString EditAddressDialog::getDuplicateAddressWarning() const {
+    QString dup_address = ui->addressEdit->text();
+    QString existing_label = model->labelForAddress(dup_address);
+    QString existing_purpose = model->purposeForAddress(dup_address);
+
+    if (existing_purpose == "receive" &&
+        (mode == NewSendingAddress || mode == EditSendingAddress)) {
+        return tr("Address \"%1\" already exists as a receiving address with "
+                  "label "
+                  "\"%2\" and so cannot be added as a sending address.")
+            .arg(dup_address)
+            .arg(existing_label);
+    }
+    return tr("The entered address \"%1\" is already in the address book with "
+              "label \"%2\".")
+        .arg(dup_address)
+        .arg(existing_label);
 }
 
 QString EditAddressDialog::getAddress() const {

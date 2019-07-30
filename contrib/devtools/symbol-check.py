@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright (c) 2014 Wladimir J. van der Laan
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
@@ -11,7 +11,6 @@ Example usage:
 
     find ../gitian-builder/build -type f -executable | xargs python contrib/devtools/symbol-check.py
 '''
-from __future__ import division, print_function, unicode_literals
 import subprocess
 import re
 import sys
@@ -106,8 +105,8 @@ def read_symbols(executable, imports=True):
                          stderr=subprocess.PIPE, stdin=subprocess.PIPE, universal_newlines=True)
     (stdout, stderr) = p.communicate()
     if p.returncode:
-        raise IOError('Could not read symbols for %s: %s' %
-                      (executable, stderr.strip()))
+        raise IOError('Could not read symbols for {}: {}'.format(
+            executable, stderr.strip()))
     syms = []
     for line in stdout.splitlines():
         line = line.split()
@@ -144,7 +143,7 @@ def read_libraries(filename):
         tokens = line.split()
         if len(tokens) > 2 and tokens[1] == '(NEEDED)':
             match = re.match(
-                '^Shared library: \[(.*)\]$', ' '.join(tokens[2:]))
+                r'^Shared library: \[(.*)\]$', ' '.join(tokens[2:]))
             if match:
                 libraries.append(match.group(1))
             else:
@@ -159,21 +158,21 @@ if __name__ == '__main__':
         # Check imported symbols
         for sym, version in read_symbols(filename, True):
             if version and not check_version(MAX_VERSIONS, version):
-                print('%s: symbol %s from unsupported version %s' %
-                      (filename, cppfilt(sym), version))
+                print('{}: symbol {} from unsupported version {}'.format(
+                    filename, cppfilt(sym), version))
                 retval = 1
         # Check exported symbols
         for sym, version in read_symbols(filename, False):
             if sym in IGNORE_EXPORTS:
                 continue
-            print('%s: export of symbol %s not allowed' %
-                  (filename, cppfilt(sym)))
+            print('{}: export of symbol {} not allowed'.format(
+                filename, cppfilt(sym)))
             retval = 1
         # Check dependency libraries
         for library_name in read_libraries(filename):
             if library_name not in ALLOWED_LIBRARIES:
-                print('%s: NEEDED library %s is not allowed' %
-                      (filename, library_name))
+                print('{}: NEEDED library {} is not allowed'.format(
+                    filename, library_name))
                 retval = 1
 
     sys.exit(retval)

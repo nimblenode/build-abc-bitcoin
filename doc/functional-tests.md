@@ -1,6 +1,6 @@
 # Functional tests
 
-The [/ est/](/test/) directory contains integration tests that test bitcoind
+The [/test/](/test/) directory contains integration tests that test bitcoind
 and its utilities in their entirety. It does not contain unit tests, which
 can be found in [/src/test](/src/test), [/src/wallet/test](/src/wallet/test),
 etc.
@@ -28,8 +28,8 @@ you configure. Tests will not run otherwise.
 
 The ZMQ functional test requires a python ZMQ library. To install it:
 
-- on Unix, run `sudo apt-get install python3-zmq`
-- on mac OS, run `pip3 install pyzmq`
+- On Unix, run `sudo apt-get install python3-zmq`
+- On mac OS, run `pip3 install pyzmq`
 
 #### Running the tests
 
@@ -116,11 +116,11 @@ killall bitcoind
 The tests contain logging at different levels (debug, info, warning, etc). By
 default:
 
-- when run through the test_runner harness, *all* logs are written to
+- When run through the test_runner harness, *all* logs are written to
   `test_framework.log` and no logs are output to the console.
-- when run directly, *all* logs are written to `test_framework.log` and INFO
+- When run directly, *all* logs are written to `test_framework.log` and INFO
   level and above are output to the console.
-- when run on Travis, no logs are output to the console. However, if a test
+- When run on Travis, no logs are output to the console. However, if a test
   fails, the `test_framework.log` and bitcoind `debug.log`s will all be dumped
   to the console to help troubleshooting.
 
@@ -156,6 +156,41 @@ import pdb; pdb.set_trace()
 anywhere in the test. You will then be able to inspect variables, as well as
 call methods that interact with the bitcoind nodes-under-test.
 
+If further introspection of the bitcoind instances themselves becomes
+necessary, this can be accomplished by first setting a pdb breakpoint
+at an appropriate location, running the test to that point, then using
+`gdb` to attach to the process and debug.
+
+For instance, to attach to `self.node[1]` during a run:
+
+```bash
+2017-06-27 14:13:56.686000 TestFramework (INFO): Initializing test directory /tmp/user/1000/testo9vsdjo3
+```
+
+use the directory path to get the pid from the pid file:
+
+```bash
+cat /tmp/user/1000/testo9vsdjo3/node1/regtest/bitcoind.pid
+gdb /home/example/bitcoind <pid>
+```
+
+Note: gdb attach step may require `sudo`. To get rid of this, you can run:
+
+```bash
+echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope
+```
+
+##### Prevent using deprecated features
+
+Python will issue a `DeprecationWarning` when a deprecated feature is
+encountered in a script. By default, this warning message is ignored and not
+displayed to the user. This behavior can be changed by setting the environment
+variable `PYTHONWARNINGS` as follow:
+
+`PYTHONWARNINGS=default::DeprecationWarning`
+
+The warning message will now be printed to the `sys.stderr` output.
+
 ### Util tests
 
 Util tests can be run locally by running `test/util/bitcoin-util-test.py`.
@@ -179,7 +214,7 @@ don't have test cases for.
 #### Style guidelines
 
 - Where possible, try to adhere to
-  [PEP-8 guidelines]([https://www.python.org/dev/peps/pep-0008/)
+  [PEP-8 guidelines](https://www.python.org/dev/peps/pep-0008/)
 - Use a python linter like flake8 before submitting PRs to catch common style
   nits (eg trailing whitespace, unused imports, etc)
 - Avoid wildcard imports where possible
@@ -205,6 +240,11 @@ don't have test cases for.
 - When calling RPCs with lots of arguments, consider using named keyword
   arguments instead of positional arguments to make the intent of the call
   clear to readers.
+- Many of the core test framework classes such as `CBlock` and `CTransaction`
+  don't allow new attributes to be added to their objects at runtime like
+  typical Python objects allow. This helps prevent unpredictable side effects
+  from typographical errors or usage of the objects outside of their intended
+  purpose.
 
 #### RPC and P2P definitions
 
@@ -217,7 +257,7 @@ P2P messages. These can be found in the following source files:
 
 #### Using the P2P interface
 
-- `mininode.py` contains all the definitions for objects that pass
+- `messages.py` contains all the definitions for objects that pass
 over the network (`CBlock`, `CTransaction`, etc, along with the network-level
 wrappers for them, `msg_block`, `msg_tx`, etc).
 
@@ -252,7 +292,7 @@ on nodes 2 and up.
 
 - Implement a (generator) function called `get_tests()` which yields `TestInstance`s.
 Each `TestInstance` consists of:
-  - a list of `[object, outcome, hash]` entries
+  - A list of `[object, outcome, hash]` entries
     * `object` is a `CBlock`, `CTransaction`, or
     `CBlockHeader`.  `CBlock`'s and `CTransaction`'s are tested for
     acceptance.  `CBlockHeader`s can be used so that the test runner can deliver

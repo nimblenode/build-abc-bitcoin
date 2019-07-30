@@ -5,8 +5,8 @@
 #ifndef BITCOIN_QT_GUIUTIL_H
 #define BITCOIN_QT_GUIUTIL_H
 
-#include "amount.h"
-#include "fs.h"
+#include <amount.h>
+#include <fs.h>
 
 #include <QEvent>
 #include <QHeaderView>
@@ -22,6 +22,10 @@ class SendCoinsRecipient;
 class CChainParams;
 class Config;
 
+namespace interfaces {
+class Node;
+}
+
 QT_BEGIN_NAMESPACE
 class QAbstractItemView;
 class QDateTime;
@@ -31,7 +35,8 @@ class QUrl;
 class QWidget;
 QT_END_NAMESPACE
 
-/** Utility functions used by the Bitcoin Qt UI.
+/**
+ * Utility functions used by the Bitcoin Qt UI.
  */
 namespace GUIUtil {
 
@@ -43,28 +48,25 @@ QString dateTimeStr(qint64 nTime);
 QFont fixedPitchFont();
 
 // Generate an invalid, but convincing address.
-std::string DummyAddress(const Config &config);
+std::string DummyAddress(const CChainParams &params);
 
-// Convert an address into the user chosen format
-QString convertToConfiguredAddressFormat(const Config &config,
-                                         const QString &addr);
+// Convert any address into cashaddr
+QString convertToCashAddr(const CChainParams &params, const QString &addr);
 
 // Set up widgets for address and amounts
 void setupAddressWidget(QValidatedLineEdit *widget, QWidget *parent);
 void setupAmountWidget(QLineEdit *widget, QWidget *parent);
 
-QString bitcoinURIScheme(const CChainParams &, bool useCashAddr);
-QString bitcoinURIScheme(const Config &);
 // Parse "bitcoincash:" URI into recipient object, return true on successful
 // parsing
 bool parseBitcoinURI(const QString &scheme, const QUrl &uri,
                      SendCoinsRecipient *out);
 bool parseBitcoinURI(const QString &scheme, QString uri,
                      SendCoinsRecipient *out);
-QString formatBitcoinURI(const Config &config, const SendCoinsRecipient &info);
+QString formatBitcoinURI(const SendCoinsRecipient &info);
 
 // Returns true if given address+amount meets "dust" definition
-bool isDust(const QString &address, const Amount amount,
+bool isDust(interfaces::Node &node, const QString &address, const Amount amount,
             const CChainParams &chainParams);
 
 // HTML escaping for rich text controls
@@ -141,6 +143,9 @@ bool isObscured(QWidget *w);
 
 // Open debug.log
 void openDebugLogfile();
+
+// Open the config file
+bool openBitcoinConf();
 
 // Replace invalid default fonts with known good ones
 void SubstituteFonts(const QString &language);
@@ -228,6 +233,8 @@ QString formatPingTime(double dPingTime);
 QString formatTimeOffset(int64_t nTimeOffset);
 
 QString formatNiceTimeOffset(qint64 secs);
+
+QString formatBytes(uint64_t bytes);
 
 class ClickableLabel : public QLabel {
     Q_OBJECT

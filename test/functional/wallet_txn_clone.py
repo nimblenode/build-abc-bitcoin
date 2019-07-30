@@ -5,7 +5,12 @@
 """Test the wallet accounts properly when there are cloned transactions with malleated scriptsigs."""
 
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import *
+from test_framework.util import (
+    assert_equal,
+    connect_nodes,
+    disconnect_nodes,
+    sync_blocks,
+)
 
 
 class TxnMallTest(BitcoinTestFramework):
@@ -24,7 +29,9 @@ class TxnMallTest(BitcoinTestFramework):
         disconnect_nodes(self.nodes[2], self.nodes[1])
 
     def run_test(self):
-        # All nodes should start with 1,250 BTC:
+        output_type = "legacy"
+
+        # All nodes should start with 1,250 BCH:
         starting_balance = 1250
         for i in range(4):
             assert_equal(self.nodes[i].getbalance(), starting_balance)
@@ -34,11 +41,11 @@ class TxnMallTest(BitcoinTestFramework):
         # Assign coins to foo and bar accounts:
         self.nodes[0].settxfee(.001)
 
-        node0_address_foo = self.nodes[0].getnewaddress("foo")
+        node0_address_foo = self.nodes[0].getnewaddress("foo", output_type)
         fund_foo_txid = self.nodes[0].sendfrom("", node0_address_foo, 1219)
         fund_foo_tx = self.nodes[0].gettransaction(fund_foo_txid)
 
-        node0_address_bar = self.nodes[0].getnewaddress("bar")
+        node0_address_bar = self.nodes[0].getnewaddress("bar", output_type)
         fund_bar_txid = self.nodes[0].sendfrom("", node0_address_bar, 29)
         fund_bar_tx = self.nodes[0].gettransaction(fund_bar_txid)
 
@@ -64,7 +71,7 @@ class TxnMallTest(BitcoinTestFramework):
 
         # createrawtransaction randomizes the order of its outputs, so swap them if necessary.
         # output 0 is at version+#inputs+input+sigstub+sequence+#outputs
-        # 40 BTC serialized is 00286bee00000000
+        # 40 BCH serialized is 00286bee00000000
         pos0 = 2 * (4 + 1 + 36 + 1 + 4 + 1)
         hex40 = "00286bee00000000"
         output_len = 16 + 2 + 2 * \
@@ -78,8 +85,8 @@ class TxnMallTest(BitcoinTestFramework):
 
         # Use a different signature hash type to sign.  This creates an equivalent but malleated clone.
         # Don't send the clone anywhere yet
-        tx1_clone = self.nodes[0].signrawtransaction(
-            clone_raw, None, None, "ALL|FORKID|ANYONECANPAY")
+        tx1_clone = self.nodes[0].signrawtransactionwithwallet(
+            clone_raw, None, "ALL|FORKID|ANYONECANPAY")
         assert_equal(tx1_clone["complete"], True)
 
         # Have node0 mine a block, if requested:
@@ -118,6 +125,7 @@ class TxnMallTest(BitcoinTestFramework):
         # Send clone and its parent to miner
         self.nodes[2].sendrawtransaction(fund_foo_tx["hex"])
         txid1_clone = self.nodes[2].sendrawtransaction(tx1_clone["hex"])
+
         # ... mine a block...
         self.nodes[2].generate(1)
 
@@ -138,7 +146,7 @@ class TxnMallTest(BitcoinTestFramework):
         assert_equal(tx1_clone["confirmations"], 2)
         assert_equal(tx2["confirmations"], 1)
 
-        # Check node0's total balance; should be same as before the clone, + 100 BTC for 2 matured,
+        # Check node0's total balance; should be same as before the clone, + 100 BCH for 2 matured,
         # less possible orphaned matured subsidy
         expected += 100
         if (self.options.mine_block):

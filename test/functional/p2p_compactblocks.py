@@ -3,19 +3,52 @@
 # Copyright (c) 2017 The Bitcoin developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-
-from test_framework.mininode import *
-from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import *
-from test_framework.blocktools import create_block, create_coinbase
-from test_framework.script import CScript, OP_TRUE
-from test_framework.txtools import pad_tx
-
-'''
-CompactBlocksTest -- test compact blocks (BIP 152)
+"""Test compact blocks (BIP 152).
 
 Only testing Version 1 compact blocks (txids)
-'''
+"""
+
+import random
+
+from test_framework.blocktools import create_block, create_coinbase
+from test_framework.messages import (
+    BlockTransactions,
+    BlockTransactionsRequest,
+    calculate_shortid,
+    CBlock,
+    CBlockHeader,
+    CInv,
+    COutPoint,
+    CTransaction,
+    CTxIn,
+    CTxOut,
+    FromHex,
+    HeaderAndShortIDs,
+    msg_block,
+    msg_blocktxn,
+    msg_cmpctblock,
+    msg_getblocktxn,
+    msg_getdata,
+    msg_getheaders,
+    msg_headers,
+    msg_inv,
+    msg_sendcmpct,
+    msg_sendheaders,
+    msg_tx,
+    NODE_NETWORK,
+    P2PHeaderAndShortIDs,
+    PrefilledTransaction,
+    ToHex,
+)
+from test_framework.mininode import (
+    mininode_lock,
+    network_thread_start,
+    P2PInterface,
+)
+from test_framework.script import CScript, OP_TRUE
+from test_framework.test_framework import BitcoinTestFramework
+from test_framework.txtools import pad_tx
+from test_framework.util import assert_equal, sync_blocks, wait_until
 
 # TestNode: A peer we use to send messages to bitcoind, and store responses.
 

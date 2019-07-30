@@ -2,20 +2,30 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "core_io.h"
+#include <core_io.h>
 
-#include "dstencode.h"
-#include "primitives/transaction.h"
-#include "script/script.h"
-#include "script/sigencoding.h"
-#include "script/standard.h"
-#include "serialize.h"
-#include "streams.h"
-#include "util.h"
-#include "utilmoneystr.h"
-#include "utilstrencodings.h"
+#include <config.h>
+#include <key_io.h>
+#include <primitives/transaction.h>
+#include <script/script.h>
+#include <script/sigencoding.h>
+#include <script/standard.h>
+#include <serialize.h>
+#include <streams.h>
+#include <util.h>
+#include <utilmoneystr.h>
+#include <utilstrencodings.h>
 
 #include <univalue.h>
+
+UniValue ValueFromAmount(const Amount &amount) {
+    bool sign = amount < Amount::zero();
+    Amount n_abs(sign ? -amount : amount);
+    int64_t quotient = n_abs / COIN;
+    int64_t remainder = (n_abs % COIN) / SATOSHI;
+    return UniValue(UniValue::VNUM, strprintf("%s%d.%08d", sign ? "-" : "",
+                                              quotient, remainder));
+}
 
 std::string FormatScript(const CScript &script) {
     std::string ret;
@@ -121,7 +131,7 @@ std::string ScriptToAsmStr(const CScript &script,
                     uint32_t flags = SCRIPT_VERIFY_STRICTENC;
                     if (vch.back() & SIGHASH_FORKID) {
                         // If the transaction is using SIGHASH_FORKID, we need
-                        // to set the apropriate flag.
+                        // to set the appropriate flag.
                         // TODO: Remove after the Hard Fork.
                         flags |= SCRIPT_ENABLE_SIGHASH_FORKID;
                     }
@@ -152,8 +162,8 @@ std::string ScriptToAsmStr(const CScript &script,
     return str;
 }
 
-std::string EncodeHexTx(const CTransaction &tx, const int serialFlags) {
-    CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION | serialFlags);
+std::string EncodeHexTx(const CTransaction &tx, const int serializeFlags) {
+    CDataStream ssTx(SER_NETWORK, PROTOCOL_VERSION | serializeFlags);
     ssTx << tx;
     return HexStr(ssTx.begin(), ssTx.end());
 }
@@ -179,13 +189,13 @@ void ScriptPubKeyToUniv(const CScript &scriptPubKey, UniValue &out,
 
     UniValue a(UniValue::VARR);
     for (const CTxDestination &addr : addresses) {
-        a.push_back(EncodeDestination(addr));
+        a.push_back(EncodeDestination(addr, GetConfig()));
     }
     out.pushKV("addresses", a);
 }
 
-void TxToUniv(const CTransaction &tx, const uint256 &hashBlock,
-              UniValue &entry) {
+void TxToUniv(const CTransaction &tx, const uint256 &hashBlock, UniValue &entry,
+              bool include_hex, int serialize_flags) {
     entry.pushKV("txid", tx.GetId().GetHex());
     entry.pushKV("hash", tx.GetHash().GetHex());
     entry.pushKV("version", tx.nVersion);
@@ -222,8 +232,7 @@ void TxToUniv(const CTransaction &tx, const uint256 &hashBlock,
 
         UniValue out(UniValue::VOBJ);
 
-        UniValue outValue(UniValue::VNUM, FormatMoney(txout.nValue));
-        out.pushKV("value", outValue);
+        out.pushKV("value", ValueFromAmount(txout.nValue));
         out.pushKV("n", int64_t(i));
 
         UniValue o(UniValue::VOBJ);
@@ -238,7 +247,9 @@ void TxToUniv(const CTransaction &tx, const uint256 &hashBlock,
         entry.pushKV("blockhash", hashBlock.GetHex());
     }
 
-    // the hex-encoded transaction. used the name "hex" to be consistent with
-    // the verbose output of "getrawtransaction".
-    entry.pushKV("hex", EncodeHexTx(tx));
+    if (include_hex) {
+        // the hex-encoded transaction. used the name "hex" to be consistent
+        // with the verbose output of "getrawtransaction".
+        entry.pushKV("hex", EncodeHexTx(tx, serialize_flags));
+    }
 }

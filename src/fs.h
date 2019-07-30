@@ -5,11 +5,10 @@
 #ifndef BITCOIN_FS_H
 #define BITCOIN_FS_H
 
-#include <stdio.h>
+#include <cstdio>
 #include <string>
 
 #include <boost/filesystem.hpp>
-#include <boost/filesystem/detail/utf8_codecvt_facet.hpp>
 #include <boost/filesystem/fstream.hpp>
 
 /** Filesystem operations and types */
@@ -19,6 +18,6 @@ namespace fs = boost::filesystem;
 namespace fsbridge {
 FILE *fopen(const fs::path &p, const char *mode);
 FILE *freopen(const fs::path &p, const char *mode, FILE *stream);
-};
+}; // namespace fsbridge
 
-#endif
+#endif // BITCOIN_FS_H

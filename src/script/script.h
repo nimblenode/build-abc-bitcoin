@@ -6,9 +6,9 @@
 #ifndef BITCOIN_SCRIPT_SCRIPT_H
 #define BITCOIN_SCRIPT_SCRIPT_H
 
-#include "crypto/common.h"
-#include "prevector.h"
-#include "serialize.h"
+#include <crypto/common.h>
+#include <prevector.h>
+#include <serialize.h>
 
 #include <cassert>
 #include <climits>
@@ -30,6 +30,9 @@ static const int MAX_PUBKEYS_PER_MULTISIG = 20;
 
 // Maximum script length in bytes
 static const int MAX_SCRIPT_SIZE = 10000;
+
+// Maximum number of values on script interpreter stack
+static const int MAX_STACK_SIZE = 1000;
 
 // Threshold for nLockTime: below this value it is interpreted as block number,
 // otherwise as UNIX timestamp. Thresold is Tue Nov 5 00:53:20 1985 UTC
@@ -340,10 +343,11 @@ public:
     }
 
     int getint() const {
-        if (m_value > std::numeric_limits<int>::max())
+        if (m_value > std::numeric_limits<int>::max()) {
             return std::numeric_limits<int>::max();
-        else if (m_value < std::numeric_limits<int>::min())
+        } else if (m_value < std::numeric_limits<int>::min()) {
             return std::numeric_limits<int>::min();
+        }
         return m_value;
     }
 
@@ -403,6 +407,12 @@ private:
     int64_t m_value;
 };
 
+/**
+ * We use a prevector for the script to reduce the considerable memory overhead
+ * of vectors in cases where they normally contain a small number of small
+ * elements. Tests in October 2015 showed use of this reduced dbcache memory
+ * usage by 23% and made an initial sync 13% faster.
+ */
 typedef prevector<28, uint8_t> CScriptBase;
 
 /** Serialized script, used inside transaction inputs and outputs */
@@ -433,10 +443,11 @@ public:
 
     template <typename Stream, typename Operation>
     inline void SerializationOp(Stream &s, Operation ser_action) {
-        READWRITE(static_cast<CScriptBase &>(*this));
+        READWRITEAS(CScriptBase, *this);
     }
 
     CScript &operator+=(const CScript &b) {
+        reserve(size() + b.size());
         insert(end(), b.begin(), b.end());
         return *this;
     }
@@ -526,11 +537,17 @@ public:
     bool GetOp2(const_iterator &pc, opcodetype &opcodeRet,
                 std::vector<uint8_t> *pvchRet) const {
         opcodeRet = OP_INVALIDOPCODE;
-        if (pvchRet) pvchRet->clear();
-        if (pc >= end()) return false;
+        if (pvchRet) {
+            pvchRet->clear();
+        }
+        if (pc >= end()) {
+            return false;
+        }
 
         // Read instruction
-        if (end() - pc < 1) return false;
+        if (end() - pc < 1) {
+            return false;
+        }
 
         uint32_t opcode = *pc++;
 
@@ -540,25 +557,33 @@ public:
             if (opcode < OP_PUSHDATA1) {
                 nSize = opcode;
             } else if (opcode == OP_PUSHDATA1) {
-                if (end() - pc < 1) return false;
+                if (end() - pc < 1) {
+                    return false;
+                }
                 nSize = *pc++;
             } else if (opcode == OP_PUSHDATA2) {
-                if (end() - pc < 2) return false;
+                if (end() - pc < 2) {
+                    return false;
+                }
                 nSize = ReadLE16(&pc[0]);
                 pc += 2;
             } else if (opcode == OP_PUSHDATA4) {
-                if (end() - pc < 4) return false;
+                if (end() - pc < 4) {
+                    return false;
+                }
                 nSize = ReadLE32(&pc[0]);
                 pc += 4;
             }
             if (end() - pc < 0 || uint32_t(end() - pc) < nSize) {
                 return false;
             }
-            if (pvchRet) pvchRet->assign(pc, pc + nSize);
+            if (pvchRet) {
+                pvchRet->assign(pc, pc + nSize);
+            }
             pc += nSize;
         }
 
-        opcodeRet = (opcodetype)opcode;
+        opcodeRet = static_cast<opcodetype>(opcode);
         return true;
     }
 

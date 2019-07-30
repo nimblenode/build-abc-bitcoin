@@ -5,7 +5,7 @@
 #ifndef BITCOIN_QT_SENDCOINSDIALOG_H
 #define BITCOIN_QT_SENDCOINSDIALOG_H
 
-#include "walletmodel.h"
+#include <qt/walletmodel.h>
 
 #include <QDialog>
 #include <QMessageBox>
@@ -13,7 +13,6 @@
 #include <QTimer>
 
 class ClientModel;
-class OptionsModel;
 class PlatformStyle;
 class SendCoinsEntry;
 class SendCoinsRecipient;
@@ -31,8 +30,8 @@ class SendCoinsDialog : public QDialog {
     Q_OBJECT
 
 public:
-    explicit SendCoinsDialog(const PlatformStyle *platformStyle,
-                             QWidget *parent = 0);
+    SendCoinsDialog(const PlatformStyle *platformStyle, WalletModel *model,
+                    QWidget *parent = nullptr);
     ~SendCoinsDialog();
 
     void setClientModel(ClientModel *clientModel);
@@ -55,10 +54,7 @@ public Q_SLOTS:
     void accept() override;
     SendCoinsEntry *addEntry();
     void updateTabsAndLabels();
-    void setBalance(const Amount balance, const Amount unconfirmedBalance,
-                    const Amount immatureBalance, const Amount watchOnlyBalance,
-                    const Amount watchUnconfBalance,
-                    const Amount watchImmatureBalance);
+    void setBalance(const interfaces::WalletBalances &balances);
 
 Q_SIGNALS:
     void coinsSent(const uint256 &txid);
@@ -79,6 +75,8 @@ private:
                            const QString &msgArg = QString());
     void minimizeFeeSection(bool fMinimize);
     void updateFeeMinimizedLabel();
+    // Update the passed in CCoinControl with state from the GUI
+    void updateCoinControlState(CCoinControl &ctrl);
 
 private Q_SLOTS:
     void on_sendButton_clicked();
@@ -103,7 +101,6 @@ private Q_SLOTS:
     void updateFeeSectionControls();
     void updateMinFeeLabel();
     void updateSmartFeeLabel();
-    void updateGlobalFeeVariables();
 
 Q_SIGNALS:
     // Fired when a message should be reported to the user
@@ -119,7 +116,7 @@ class SendConfirmationDialog : public QMessageBox {
 public:
     SendConfirmationDialog(const QString &title, const QString &text,
                            int secDelay = SEND_CONFIRM_DELAY,
-                           QWidget *parent = 0);
+                           QWidget *parent = nullptr);
     int exec();
 
 private Q_SLOTS:

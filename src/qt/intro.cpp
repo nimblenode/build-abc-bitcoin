@@ -3,14 +3,15 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #if defined(HAVE_CONFIG_H)
-#include "config/bitcoin-config.h"
+#include <config/bitcoin-config.h>
 #endif
 
-#include "fs.h"
-#include "guiutil.h"
-#include "intro.h"
-#include "ui_intro.h"
-#include "util.h"
+#include <fs.h>
+#include <interfaces/node.h>
+#include <qt/forms/ui_intro.h>
+#include <qt/guiutil.h>
+#include <qt/intro.h>
+#include <util.h>
 
 #include <QFileDialog>
 #include <QMessageBox>
@@ -64,7 +65,7 @@ private:
     Intro *intro;
 };
 
-#include "intro.moc"
+#include <qt/intro.moc>
 
 FreespaceChecker::FreespaceChecker(Intro *_intro) {
     this->intro = _intro;
@@ -119,17 +120,37 @@ Intro::Intro(QWidget *parent)
     ui->setupUi(this);
     ui->welcomeLabel->setText(ui->welcomeLabel->text().arg(tr(PACKAGE_NAME)));
     ui->storageLabel->setText(ui->storageLabel->text().arg(tr(PACKAGE_NAME)));
+
+    ui->lblExplanation1->setText(ui->lblExplanation1->text()
+                                     .arg(tr(PACKAGE_NAME))
+                                     .arg(BLOCK_CHAIN_SIZE)
+                                     .arg(2009)
+                                     .arg(tr("Bitcoin")));
+    ui->lblExplanation2->setText(
+        ui->lblExplanation2->text().arg(tr(PACKAGE_NAME)));
+
     uint64_t pruneTarget = std::max<int64_t>(0, gArgs.GetArg("-prune", 0));
     requiredSpace = BLOCK_CHAIN_SIZE;
+    QString storageRequiresMsg =
+        tr("At least %1 GB of data will be stored in this directory, and it "
+           "will grow over time.");
     if (pruneTarget) {
         uint64_t prunedGBs = std::ceil(pruneTarget * 1024 * 1024.0 / GB_BYTES);
         if (prunedGBs <= requiredSpace) {
             requiredSpace = prunedGBs;
+            storageRequiresMsg = tr("Approximately %1 GB of data will be "
+                                    "stored in this directory.");
         }
+        ui->lblExplanation3->setVisible(true);
+    } else {
+        ui->lblExplanation3->setVisible(false);
     }
     requiredSpace += CHAIN_STATE_SIZE;
     ui->sizeWarningLabel->setText(
-        ui->sizeWarningLabel->text().arg(tr(PACKAGE_NAME)).arg(requiredSpace));
+        tr("%1 will download and store a copy of the Bitcoin block chain.")
+            .arg(tr(PACKAGE_NAME)) +
+        " " + storageRequiresMsg.arg(requiredSpace) + " " +
+        tr("The wallet will also be stored in this directory."));
     startThread();
 }
 
@@ -161,7 +182,7 @@ QString Intro::getDefaultDataDirectory() {
     return GUIUtil::boostPathToQString(GetDefaultDataDir());
 }
 
-bool Intro::pickDataDirectory() {
+bool Intro::pickDataDirectory(interfaces::Node &node) {
     QSettings settings;
     /* If data directory provided on command line, no need to look at settings
        or show a picking dialog */
@@ -215,8 +236,8 @@ bool Intro::pickDataDirectory() {
      */
     if (dataDir != getDefaultDataDirectory()) {
         // use OS locale for path setting
-        gArgs.SoftSetArg("-datadir",
-                         GUIUtil::qstringToBoostPath(dataDir).string());
+        node.softSetArg("-datadir",
+                        GUIUtil::qstringToBoostPath(dataDir).string());
     }
     return true;
 }

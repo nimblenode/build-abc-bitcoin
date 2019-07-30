@@ -6,11 +6,11 @@
 #ifndef BITCOIN_TXDB_H
 #define BITCOIN_TXDB_H
 
-#include "blockfileinfo.h"
-#include "chain.h"
-#include "coins.h"
-#include "dbwrapper.h"
-#include "diskblockpos.h"
+#include <blockfileinfo.h>
+#include <coins.h>
+#include <dbwrapper.h>
+#include <flatfile.h>
+#include <primitives/block.h>
 
 #include <map>
 #include <string>
@@ -38,31 +38,9 @@ static const int64_t nMaxBlockDBCache = 2;
 // Unlike for the UTXO database, for the txindex scenario the leveldb cache make
 // a meaningful difference:
 // https://github.com/bitcoin/bitcoin/pull/8273#issuecomment-229601991
-static const int64_t nMaxBlockDBAndTxIndexCache = 1024;
+static const int64_t nMaxTxIndexCache = 1024;
 //! Max memory allocated to coin DB specific cache (MiB)
 static const int64_t nMaxCoinsDBCache = 8;
-
-struct CDiskTxPos : public CDiskBlockPos {
-    unsigned int nTxOffset; // after header
-
-    ADD_SERIALIZE_METHODS;
-
-    template <typename Stream, typename Operation>
-    inline void SerializationOp(Stream &s, Operation ser_action) {
-        READWRITE(*(CDiskBlockPos *)this);
-        READWRITE(VARINT(nTxOffset));
-    }
-
-    CDiskTxPos(const CDiskBlockPos &blockIn, unsigned int nTxOffsetIn)
-        : CDiskBlockPos(blockIn.nFile, blockIn.nPos), nTxOffset(nTxOffsetIn) {}
-
-    CDiskTxPos() { SetNull(); }
-
-    void SetNull() {
-        CDiskBlockPos::SetNull();
-        nTxOffset = 0;
-    }
-};
 
 /** CCoinsView backed by the coin database (chainstate/) */
 class CCoinsViewDB final : public CCoinsView {
@@ -113,11 +91,6 @@ public:
     explicit CBlockTreeDB(size_t nCacheSize, bool fMemory = false,
                           bool fWipe = false);
 
-private:
-    CBlockTreeDB(const CBlockTreeDB &);
-    void operator=(const CBlockTreeDB &);
-
-public:
     bool WriteBatchSync(
         const std::vector<std::pair<int, const CBlockFileInfo *>> &fileInfo,
         int nLastFile, const std::vector<const CBlockIndex *> &blockinfo);
@@ -125,8 +98,6 @@ public:
     bool ReadLastBlockFile(int &nFile);
     bool WriteReindexing(bool fReindexing);
     bool ReadReindexing(bool &fReindexing);
-    bool ReadTxIndex(const uint256 &txid, CDiskTxPos &pos);
-    bool WriteTxIndex(const std::vector<std::pair<uint256, CDiskTxPos>> &vect);
     bool WriteFlag(const std::string &name, bool fValue);
     bool ReadFlag(const std::string &name, bool &fValue);
     bool LoadBlockIndexGuts(

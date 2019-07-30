@@ -3,9 +3,9 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "uint256.h"
+#include <uint256.h>
 
-#include "utilstrencodings.h"
+#include <utilstrencodings.h>
 
 #include <cstdio>
 #include <cstring>
@@ -13,22 +13,19 @@
 template <unsigned int BITS>
 base_blob<BITS>::base_blob(const std::vector<uint8_t> &vch) {
     assert(vch.size() == sizeof(data));
-    memcpy(data, &vch[0], sizeof(data));
+    memcpy(data, vch.data(), sizeof(data));
 }
 
 template <unsigned int BITS> std::string base_blob<BITS>::GetHex() const {
-    char psz[sizeof(data) * 2 + 1];
-    for (size_t i = 0; i < sizeof(data); i++) {
-        sprintf(psz + i * 2, "%02x", data[sizeof(data) - i - 1]);
-    }
-    return std::string(psz, psz + sizeof(data) * 2);
+    return HexStr(std::reverse_iterator<const uint8_t *>(data + sizeof(data)),
+                  std::reverse_iterator<const uint8_t *>(data));
 }
 
 template <unsigned int BITS> void base_blob<BITS>::SetHex(const char *psz) {
     memset(data, 0, sizeof(data));
 
     // skip leading spaces
-    while (isspace(*psz)) {
+    while (IsSpace(*psz)) {
         psz++;
     }
 

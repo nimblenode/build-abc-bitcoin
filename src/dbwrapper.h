@@ -5,13 +5,13 @@
 #ifndef BITCOIN_DBWRAPPER_H
 #define BITCOIN_DBWRAPPER_H
 
-#include "clientversion.h"
-#include "fs.h"
-#include "serialize.h"
-#include "streams.h"
-#include "util.h"
-#include "utilstrencodings.h"
-#include "version.h"
+#include <clientversion.h>
+#include <fs.h>
+#include <serialize.h>
+#include <streams.h>
+#include <util.h>
+#include <utilstrencodings.h>
+#include <version.h>
 
 #include <leveldb/db.h>
 #include <leveldb/write_batch.h>
@@ -221,6 +221,9 @@ public:
     CDBWrapper(const fs::path &path, size_t nCacheSize, bool fMemory = false,
                bool fWipe = false, bool obfuscate = false);
     ~CDBWrapper();
+
+    CDBWrapper(const CDBWrapper &) = delete;
+    CDBWrapper &operator=(const CDBWrapper &) = delete;
 
     template <typename K, typename V> bool Read(const K &key, V &value) const {
         CDataStream ssKey(SER_DISK, CLIENT_VERSION);

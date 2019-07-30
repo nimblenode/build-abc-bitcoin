@@ -2,8 +2,11 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "script/sighashtype.h"
-#include "test/test_bitcoin.h"
+#include <script/sighashtype.h>
+
+#include <streams.h>
+
+#include <test/test_bitcoin.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -85,7 +88,7 @@ BOOST_AUTO_TEST_CASE(sighash_construction_test) {
 BOOST_AUTO_TEST_CASE(sighash_serialization_test) {
     std::set<uint32_t> forkValues{0, 1, 0xab1fe9, 0xc81eea, 0xffffff};
 
-    // Test all possible sig hash values embeded in signatures.
+    // Test all possible sig hash values embedded in signatures.
     for (uint32_t sigHashType = 0x00; sigHashType <= 0xff; sigHashType++) {
         for (uint32_t forkValue : forkValues) {
             uint32_t rawType = sigHashType | (forkValue << 8);

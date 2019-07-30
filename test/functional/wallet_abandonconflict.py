@@ -8,11 +8,21 @@
  descendants as abandoned which allows their inputs to be respent. It can be
  used to replace "stuck" or evicted transactions. It only works on transactions
  which are not included in a block and are not currently in the mempool. It has
- no effect on transactions which are already conflicted or abandoned.
+ no effect on transactions which are already abandoned.
 """
+from decimal import Decimal
+
+from test_framework.messages import CTransaction, FromHex
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import *
-from test_framework.mininode import *
+from test_framework.util import (
+    assert_equal,
+    assert_raises_rpc_error,
+    connect_nodes,
+    disconnect_nodes,
+    satoshi_round,
+    sync_blocks,
+    sync_mempools,
+)
 
 
 class AbandonConflictTest(BitcoinTestFramework):
@@ -41,6 +51,14 @@ class AbandonConflictTest(BitcoinTestFramework):
 
         sync_mempools(self.nodes)
         self.nodes[1].generate(1)
+
+        # Can not abandon non-wallet transaction
+        assert_raises_rpc_error(-5, 'Invalid or non-wallet transaction id',
+                                lambda: self.nodes[0].abandontransaction(txid='ff' * 32))
+        # Can not abandon confirmed transaction
+        assert_raises_rpc_error(-5, 'Transaction not eligible for abandonment',
+                                lambda: self.nodes[0].abandontransaction(txid=txA))
+
         sync_blocks(self.nodes)
         newbalance = self.nodes[0].getbalance()
 
@@ -67,7 +85,7 @@ class AbandonConflictTest(BitcoinTestFramework):
 
         outputs[self.nodes[0].getnewaddress()] = Decimal("14.99998")
         outputs[self.nodes[1].getnewaddress()] = Decimal("5")
-        signed = self.nodes[0].signrawtransaction(
+        signed = self.nodes[0].signrawtransactionwithwallet(
             self.nodes[0].createrawtransaction(inputs, outputs))
         txAB1 = self.nodes[0].sendrawtransaction(signed["hex"])
 
@@ -83,7 +101,7 @@ class AbandonConflictTest(BitcoinTestFramework):
         inputs.append({"txid": txC, "vout": nC})
         outputs = {}
         outputs[self.nodes[0].getnewaddress()] = Decimal("24.9996")
-        signed2 = self.nodes[0].signrawtransaction(
+        signed2 = self.nodes[0].signrawtransactionwithwallet(
             self.nodes[0].createrawtransaction(inputs, outputs))
         txABC2 = self.nodes[0].sendrawtransaction(signed2["hex"])
 
@@ -91,7 +109,7 @@ class AbandonConflictTest(BitcoinTestFramework):
         signed3_change = Decimal("24.999")
         inputs = [{"txid": txABC2, "vout": 0}]
         outputs = {self.nodes[0].getnewaddress(): signed3_change}
-        signed3 = self.nodes[0].signrawtransaction(
+        signed3 = self.nodes[0].signrawtransactionwithwallet(
             self.nodes[0].createrawtransaction(inputs, outputs))
         # note tx is never directly referenced, only abandoned as a child of the above
         self.nodes[0].sendrawtransaction(signed3["hex"])
@@ -172,20 +190,20 @@ class AbandonConflictTest(BitcoinTestFramework):
         outputs = {}
         outputs[self.nodes[1].getnewaddress()] = Decimal("9.9999")
         tx = self.nodes[0].createrawtransaction(inputs, outputs)
-        signed = self.nodes[0].signrawtransaction(tx)
+        signed = self.nodes[0].signrawtransactionwithwallet(tx)
         self.nodes[1].sendrawtransaction(signed["hex"])
         self.nodes[1].generate(1)
 
         connect_nodes(self.nodes[0], self.nodes[1])
         sync_blocks(self.nodes)
 
-        # Verify that B and C's 10 BTC outputs are available for spending again because AB1 is now conflicted
+        # Verify that B and C's 10 BCH outputs are available for spending again because AB1 is now conflicted
         newbalance = self.nodes[0].getbalance()
         assert_equal(newbalance, balance + Decimal("20"))
         balance = newbalance
 
         # There is currently a minor bug around this and so this test doesn't work.  See Issue #7315
-        # Invalidate the block with the double spend and B's 10 BTC output should no longer be available
+        # Invalidate the block with the double spend and B's 10 BCH output should no longer be available
         # Don't think C's should either
         self.nodes[0].invalidateblock(self.nodes[0].getbestblockhash())
         newbalance = self.nodes[0].getbalance()

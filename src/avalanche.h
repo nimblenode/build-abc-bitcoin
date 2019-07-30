@@ -5,12 +5,12 @@
 #ifndef BITCOIN_AVALANCHE_H
 #define BITCOIN_AVALANCHE_H
 
-#include "blockindexworkcomparator.h"
-#include "net.h"
-#include "protocol.h" // for CInv
-#include "rwcollection.h"
-#include "serialize.h"
-#include "uint256.h"
+#include <blockindexworkcomparator.h>
+#include <net.h>
+#include <protocol.h> // for CInv
+#include <rwcollection.h>
+#include <serialize.h>
+#include <uint256.h>
 
 #include <boost/multi_index/composite_key.hpp>
 #include <boost/multi_index/hashed_index.hpp>
@@ -48,13 +48,17 @@ static const int AVALANCHE_MAX_INFLIGHT_POLL = 10;
  * Special NodeId that represent no node.
  */
 static const NodeId NO_NODE = -1;
-}
+} // namespace
 
 /**
  * Vote history.
  */
 struct VoteRecord {
 private:
+    // confidence's LSB bit is the result. Higher bits are actual confidence
+    // score.
+    uint16_t confidence = 0;
+
     // Historical record of votes.
     uint8_t votes = 0;
     // Each bit indicate if the vote is to be considered.
@@ -62,9 +66,14 @@ private:
     // How many in flight requests exists for this element.
     mutable std::atomic<uint8_t> inflight{0};
 
-    // confidence's LSB bit is the result. Higher bits are actual confidence
-    // score.
-    uint16_t confidence = 0;
+    // Seed for pseudorandom operations.
+    const uint32_t seed = 0;
+
+    // Track how many successful votes occured.
+    uint32_t successfulVotes = 0;
+
+    // Track the nodes which are part of the quorum.
+    std::array<uint16_t, 8> nodeFilter{{0, 0, 0, 0, 0, 0, 0, 0}};
 
 public:
     VoteRecord(bool accepted) : confidence(accepted) {}
@@ -73,8 +82,10 @@ public:
      * Copy semantic
      */
     VoteRecord(const VoteRecord &other)
-        : votes(other.votes), consider(other.consider),
-          inflight(other.inflight.load()), confidence(other.confidence) {}
+        : confidence(other.confidence), votes(other.votes),
+          consider(other.consider), inflight(other.inflight.load()),
+          successfulVotes(other.successfulVotes), nodeFilter(other.nodeFilter) {
+    }
 
     /**
      * Vote accounting facilities.
@@ -90,7 +101,7 @@ public:
      * Register a new vote for an item and update confidence accordingly.
      * Returns true if the acceptance or finalization state changed.
      */
-    bool registerVote(uint32_t error);
+    bool registerVote(NodeId nodeid, uint32_t error);
 
     /**
      * Register that a request is being made regarding that item.
@@ -108,6 +119,14 @@ public:
      * Clear `count` inflight requests.
      */
     void clearInflightRequest(uint8_t count = 1) { inflight -= count; }
+
+private:
+    /**
+     * Add the node to the quorum.
+     * Returns true if the node was added, false if the node already was in the
+     * quorum.
+     */
+    bool addNodeToQuorum(NodeId nodeid);
 };
 
 class AvalancheVote {
@@ -296,7 +315,7 @@ private:
     std::atomic<bool> stopRequest;
     bool running GUARDED_BY(cs_running);
 
-    CWaitableCriticalSection cs_running;
+    Mutex cs_running;
     std::condition_variable cond_running;
 
 public:

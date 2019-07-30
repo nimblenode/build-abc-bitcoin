@@ -6,10 +6,10 @@
 #ifndef BITCOIN_KEY_H
 #define BITCOIN_KEY_H
 
-#include "pubkey.h"
-#include "serialize.h"
-#include "support/allocators/secure.h"
-#include "uint256.h"
+#include <pubkey.h>
+#include <serialize.h>
+#include <support/allocators/secure.h>
+#include <uint256.h>
 
 #include <stdexcept>
 #include <vector>
@@ -46,7 +46,7 @@ private:
     //! The actual byte data
     std::vector<uint8_t, secure_allocator<uint8_t>> keydata;
 
-    //! Check whether the 32-byte array pointed to be vch is valid keydata.
+    //! Check whether the 32-byte array pointed to by vch is valid keydata.
     static bool Check(const uint8_t *vch);
 
 public:
@@ -55,9 +55,6 @@ public:
         // Important: vch must be 32 bytes in length to not break serialization
         keydata.resize(32);
     }
-
-    //! Destructor (again necessary because of memlocking).
-    ~CKey() {}
 
     friend bool operator==(const CKey &a, const CKey &b) {
         return a.fCompressed == b.fCompressed && a.size() == b.size() &&
@@ -145,7 +142,8 @@ public:
     bool VerifyPubKey(const CPubKey &vchPubKey) const;
 
     //! Load private key and check that public key matches.
-    bool Load(CPrivKey &privkey, CPubKey &vchPubKey, bool fSkipCheck);
+    bool Load(const CPrivKey &privkey, const CPubKey &vchPubKey,
+              bool fSkipCheck);
 };
 
 struct CExtKey {

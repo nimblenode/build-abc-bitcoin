@@ -3,17 +3,20 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "arith_uint256.h"
+#include <arith_uint256.h>
 
-#include "crypto/common.h"
-#include "uint256.h"
-#include "utilstrencodings.h"
+#include <crypto/common.h>
+#include <uint256.h>
+#include <utilstrencodings.h>
 
 #include <cstdio>
 #include <cstring>
 
 template <unsigned int BITS>
 base_uint<BITS>::base_uint(const std::string &str) {
+    static_assert(BITS / 32 > 0 && BITS % 32 == 0,
+                  "Template parameter BITS must be a positive multiple of 32.");
+
     SetHex(str);
 }
 
@@ -152,7 +155,7 @@ template <unsigned int BITS> unsigned int base_uint<BITS>::bits() const {
     for (int pos = WIDTH - 1; pos >= 0; pos--) {
         if (pn[pos]) {
             for (int nbits = 31; nbits > 0; nbits--) {
-                if (pn[pos] & 1 << nbits) {
+                if (pn[pos] & 1U << nbits) {
                     return 32 * pos + nbits + 1;
                 }
             }

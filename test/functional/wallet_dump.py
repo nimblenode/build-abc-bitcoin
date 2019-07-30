@@ -7,7 +7,7 @@
 import os
 
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import (assert_equal, assert_raises_rpc_error)
+from test_framework.util import assert_equal, assert_raises_rpc_error
 
 
 def read_dump(file_name, addrs, script_addrs, hd_master_addr_old):
@@ -76,7 +76,7 @@ class WalletDumpTest(BitcoinTestFramework):
         # longer than the default 30 seconds due to an expensive
         # CWallet::TopUpKeyPool call, and the encryptwallet RPC made later in
         # the test often takes even longer.
-        self.add_nodes(self.num_nodes, self.extra_args, timewait=60)
+        self.add_nodes(self.num_nodes, extra_args=self.extra_args, timewait=60)
         self.start_nodes()
 
     def run_test(self):
@@ -87,7 +87,7 @@ class WalletDumpTest(BitcoinTestFramework):
         addrs = []
         for i in range(0, test_addr_count):
             addr = self.nodes[0].getnewaddress()
-            vaddr = self.nodes[0].validateaddress(
+            vaddr = self.nodes[0].getaddressinfo(
                 addr)  # required to get hd keypath
             addrs.append(vaddr)
         # Should be a no-op:
@@ -95,7 +95,7 @@ class WalletDumpTest(BitcoinTestFramework):
 
         # Test scripts dump by adding a 1-of-1 multisig address
         multisig_addr = self.nodes[0].addmultisigaddress(
-            1, [addrs[0]["address"]])
+            1, [addrs[0]["address"]])["address"]
 
         # dump unencrypted wallet
         result = self.nodes[0].dumpwallet(
@@ -141,14 +141,14 @@ class WalletDumpTest(BitcoinTestFramework):
         self.start_node(0, ['-wallet=w2'])
 
         # Make sure the address is not IsMine before import
-        result = self.nodes[0].validateaddress(multisig_addr)
+        result = self.nodes[0].getaddressinfo(multisig_addr)
         assert(result['ismine'] == False)
 
         self.nodes[0].importwallet(os.path.abspath(
             tmpdir + "/node0/wallet.unencrypted.dump"))
 
         # Now check IsMine is true
-        result = self.nodes[0].validateaddress(multisig_addr)
+        result = self.nodes[0].getaddressinfo(multisig_addr)
         assert(result['ismine'] == True)
 
 

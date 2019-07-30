@@ -7,7 +7,7 @@
 import os
 
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_equal, wait_until, connect_nodes_bi
+from test_framework.util import assert_equal, connect_nodes_bi, wait_until
 
 FORK_WARNING_MESSAGE = "Warning: Large-work fork detected, forking after block {}\n"
 
@@ -71,30 +71,6 @@ class NotificationsTest(BitcoinTestFramework):
             map(lambda t: t['txid'], self.nodes[1].listtransactions("*", block_count)))
         with open(self.tx_filename, 'r') as f:
             assert_equal(sorted(txids_rpc), sorted(f.read().splitlines()))
-
-        # Mine another 41 up-version blocks. -alertnotify should trigger on the 51st.
-        self.log.info("test -alertnotify for bip9")
-        self.nodes[1].generate(41)
-        self.sync_all()
-
-        # Give bitcoind 10 seconds to write the alert notification
-        wait_until(lambda: os.path.isfile(self.alert_filename)
-                   and os.path.getsize(self.alert_filename), timeout=10)
-
-        with open(self.alert_filename, 'r', encoding='utf8') as f:
-            alert_text = f.read()
-
-        # Mine more up-version blocks, should not get more alerts:
-        self.nodes[1].generate(2)
-        self.sync_all()
-
-        with open(self.alert_filename, 'r', encoding='utf8') as f:
-            alert_text2 = f.read()
-        os.remove(self.alert_filename)
-
-        self.log.info(
-            "-alertnotify should not continue notifying for more unknown version blocks")
-        assert_equal(alert_text, alert_text2)
 
         # Create an invalid chain and ensure the node warns.
         self.log.info("test -alertnotify for forked chain")

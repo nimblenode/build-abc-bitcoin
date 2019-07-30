@@ -2,28 +2,26 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <addrman.h>
+#include <chain.h>
+#include <coins.h>
+#include <compressor.h>
 #if defined(HAVE_CONFIG_H)
-#include "config/bitcoin-config.h"
+#include <config/bitcoin-config.h>
 #endif
-
-#include "addrman.h"
-#include "chain.h"
-#include "coins.h"
-#include "compressor.h"
-#include "consensus/merkle.h"
-#include "net.h"
-#include "primitives/block.h"
-#include "protocol.h"
-#include "pubkey.h"
-#include "script/script.h"
-#include "streams.h"
-#include "undo.h"
-#include "version.h"
-
-#include <cstdint>
-#include <unistd.h>
+#include <consensus/merkle.h>
+#include <net.h>
+#include <primitives/block.h>
+#include <protocol.h>
+#include <pubkey.h>
+#include <script/script.h>
+#include <streams.h>
+#include <undo.h>
+#include <version.h>
 
 #include <algorithm>
+#include <cstdint>
+#include <unistd.h>
 #include <vector>
 
 enum TEST_ID {
@@ -48,7 +46,7 @@ enum TEST_ID {
     TEST_ID_END
 };
 
-bool read_stdin(std::vector<char> &data) {
+static bool read_stdin(std::vector<char> &data) {
     char buffer[1024];
     ssize_t length = 0;
     while ((length = read(STDIN_FILENO, buffer, 1024)) > 0) {
@@ -67,7 +65,7 @@ int main(int argc, char **argv) {
     if (buffer.size() < sizeof(uint32_t)) return 0;
 
     uint32_t test_id = 0xffffffff;
-    memcpy(&test_id, &buffer[0], sizeof(uint32_t));
+    memcpy(&test_id, buffer.data(), sizeof(uint32_t));
     buffer.erase(buffer.begin(), buffer.begin() + sizeof(uint32_t));
 
     if (test_id >= TEST_ID_END) return 0;

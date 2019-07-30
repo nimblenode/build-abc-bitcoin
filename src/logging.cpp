@@ -4,9 +4,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "logging.h"
-#include "util.h"
-#include "utiltime.h"
+#include <logging.h>
+
+#include <util.h>
+#include <utiltime.h>
 
 bool fLogIPs = DEFAULT_LOGIPS;
 const char *const DEFAULT_DEBUGLOGFILE = "debug.log";
@@ -145,7 +146,8 @@ std::string BCLog::Logger::LogTimestampStr(const std::string &str) {
         int64_t nTimeMicros = GetTimeMicros();
         strStamped = FormatISO8601DateTime(nTimeMicros / 1000000);
         if (m_log_time_micros) {
-            strStamped += strprintf(".%06d", nTimeMicros % 1000000);
+            strStamped.pop_back();
+            strStamped += strprintf(".%06dZ", nTimeMicros % 1000000);
         }
         int64_t mocktime = GetMockTime();
         if (mocktime) {

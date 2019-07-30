@@ -2,26 +2,24 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "guiutil.h"
+#include <qt/guiutil.h>
 
-#include "bitcoinaddressvalidator.h"
-#include "bitcoinunits.h"
-#include "dstencode.h"
-#include "qvalidatedlineedit.h"
-#include "walletmodel.h"
-
-#include "cashaddr.h"
-#include "config.h"
-#include "dstencode.h"
-#include "fs.h"
-#include "init.h"
-#include "policy/policy.h"
-#include "primitives/transaction.h"
-#include "protocol.h"
-#include "script/script.h"
-#include "script/standard.h"
-#include "util.h"
-#include "utilstrencodings.h"
+#include <cashaddrenc.h>
+#include <chainparams.h>
+#include <fs.h>
+#include <interfaces/node.h>
+#include <key_io.h>
+#include <policy/policy.h>
+#include <primitives/transaction.h>
+#include <protocol.h>
+#include <qt/bitcoinaddressvalidator.h>
+#include <qt/bitcoinunits.h>
+#include <qt/qvalidatedlineedit.h>
+#include <qt/walletmodel.h>
+#include <script/script.h>
+#include <script/standard.h>
+#include <util.h>
+#include <utilstrencodings.h>
 
 #ifdef WIN32
 #ifdef _WIN32_WINNT
@@ -36,13 +34,11 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include "shellapi.h"
-#include "shlobj.h"
-#include "shlwapi.h"
+#include <shellapi.h>
+#include <shlobj.h>
+#include <shlwapi.h>
 #endif
 
-#include <boost/filesystem/detail/utf8_codecvt_facet.hpp>
-#include <boost/filesystem/fstream.hpp>
 #include <boost/scoped_array.hpp>
 
 #include <QAbstractItemView>
@@ -64,8 +60,6 @@
 #if QT_VERSION >= 0x50200
 #include <QFontDatabase>
 #endif
-
-static fs::detail::utf8_codecvt_facet utf8;
 
 #if defined(Q_OS_MAC)
 // These Mac includes must be done in the global namespace
@@ -102,45 +96,43 @@ QFont fixedPitchFont() {
 #endif
 }
 
-static std::string MakeAddrInvalid(std::string addr, const Config &config) {
+static std::string MakeAddrInvalid(std::string addr,
+                                   const CChainParams &params) {
     if (addr.size() < 2) {
         return "";
     }
 
     // Checksum is at the end of the address. Swapping chars to make it invalid.
     std::swap(addr[addr.size() - 1], addr[addr.size() - 2]);
-    if (!IsValidDestinationString(addr, config.GetChainParams())) {
+    if (!IsValidDestinationString(addr, params)) {
         return addr;
     }
 
     return "";
 }
 
-std::string DummyAddress(const Config &config) {
-    // Just some dummy data to generate an convincing random-looking (but
+std::string DummyAddress(const CChainParams &params) {
+    // Just some dummy data to generate a convincing random-looking (but
     // consistent) address
     static const std::vector<uint8_t> dummydata = {
         0xeb, 0x15, 0x23, 0x1d, 0xfc, 0xeb, 0x60, 0x92, 0x58, 0x86,
         0xb6, 0x7d, 0x06, 0x52, 0x99, 0x92, 0x59, 0x15, 0xae, 0xb1};
 
     const CTxDestination dstKey = CKeyID(uint160(dummydata));
-    return MakeAddrInvalid(EncodeDestination(dstKey, config), config);
+    return MakeAddrInvalid(EncodeCashAddr(dstKey, params), params);
 }
 
 // Addresses are stored in the database with the encoding that the client was
 // configured with at the time of creation.
 //
-// This converts to clients current configuration.
-QString convertToConfiguredAddressFormat(const Config &config,
-                                         const QString &addr) {
-    if (!IsValidDestinationString(addr.toStdString(),
-                                  config.GetChainParams())) {
+// This converts to cashaddr.
+QString convertToCashAddr(const CChainParams &params, const QString &addr) {
+    if (!IsValidDestinationString(addr.toStdString(), params)) {
         // We have something sketchy as input. Do not try to convert.
         return addr;
     }
-    CTxDestination dst =
-        DecodeDestination(addr.toStdString(), config.GetChainParams());
-    return QString::fromStdString(EncodeDestination(dst, config));
+    CTxDestination dst = DecodeDestination(addr.toStdString(), params);
+    return QString::fromStdString(EncodeCashAddr(dst, params));
 }
 
 void setupAddressWidget(QValidatedLineEdit *widget, QWidget *parent) {
@@ -151,7 +143,7 @@ void setupAddressWidget(QValidatedLineEdit *widget, QWidget *parent) {
     // and this is the only place, where this address is supplied.
     widget->setPlaceholderText(
         QObject::tr("Enter a Bitcoin address (e.g. %1)")
-            .arg(QString::fromStdString(DummyAddress(GetConfig()))));
+            .arg(QString::fromStdString(DummyAddress(Params()))));
     widget->setValidator(
         new BitcoinAddressEntryValidator(Params().CashAddrPrefix(), parent));
     widget->setCheckValidator(new BitcoinAddressCheckValidator(parent));
@@ -165,24 +157,6 @@ void setupAmountWidget(QLineEdit *widget, QWidget *parent) {
     widget->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 }
 
-QString bitcoinURIScheme(const CChainParams &params, bool useCashAddr) {
-    if (!useCashAddr) {
-        return "bitcoincash";
-    }
-    return QString::fromStdString(params.CashAddrPrefix());
-}
-
-QString bitcoinURIScheme(const Config &config) {
-    return bitcoinURIScheme(config.GetChainParams(),
-                            config.UseCashAddrEncoding());
-}
-
-static bool IsCashAddrEncoded(const QUrl &uri) {
-    const std::string addr = (uri.scheme() + ":" + uri.path()).toStdString();
-    auto decoded = cashaddr::Decode(addr, "");
-    return !decoded.first.empty();
-}
-
 bool parseBitcoinURI(const QString &scheme, const QUrl &uri,
                      SendCoinsRecipient *out) {
     // return if URI has wrong scheme.
@@ -191,12 +165,8 @@ bool parseBitcoinURI(const QString &scheme, const QUrl &uri,
     }
 
     SendCoinsRecipient rv;
-    if (IsCashAddrEncoded(uri)) {
-        rv.address = uri.scheme() + ":" + uri.path();
-    } else {
-        // strip out uri scheme for base58 encoded addresses
-        rv.address = uri.path();
-    }
+    rv.address = uri.scheme() + ":" + uri.path();
+
     // Trim any following forward slash which may have been added by the OS
     if (rv.address.endsWith("/")) {
         rv.address.truncate(rv.address.length() - 1);
@@ -253,12 +223,8 @@ bool parseBitcoinURI(const QString &scheme, QString uri,
     return parseBitcoinURI(scheme, uriInstance, out);
 }
 
-QString formatBitcoinURI(const Config &config, const SendCoinsRecipient &info) {
-    QString ret = info.address;
-    if (!config.UseCashAddrEncoding()) {
-        // prefix address with uri scheme for base58 encoded addresses.
-        ret = (bitcoinURIScheme(config) + ":%1").arg(ret);
-    }
+QString formatBitcoinURI(const SendCoinsRecipient &info) {
+    QString ret = convertToCashAddr(Params(), info.address);
     int paramCount = 0;
 
     if (info.amount != Amount::zero()) {
@@ -285,12 +251,12 @@ QString formatBitcoinURI(const Config &config, const SendCoinsRecipient &info) {
     return ret;
 }
 
-bool isDust(const QString &address, const Amount amount,
+bool isDust(interfaces::Node &node, const QString &address, const Amount amount,
             const CChainParams &chainParams) {
     CTxDestination dest = DecodeDestination(address.toStdString(), chainParams);
     CScript script = GetScriptForDestination(dest);
     CTxOut txOut(amount, script);
-    return txOut.IsDust(dustRelayFee);
+    return IsDust(txOut, node.getDustRelayFee());
 }
 
 QString HtmlEscape(const QString &str, bool fMultiLine) {
@@ -430,6 +396,23 @@ void openDebugLogfile() {
     }
 }
 
+bool openBitcoinConf() {
+    fs::path pathConfig = GetConfigFile(BITCOIN_CONF_FILENAME);
+
+    /* Create the file */
+    fs::ofstream configFile(pathConfig, std::ios_base::app);
+
+    if (!configFile.good()) {
+        return false;
+    }
+
+    configFile.close();
+
+    /* Open bitcoin.conf with the associated application */
+    return QDesktopServices::openUrl(
+        QUrl::fromLocalFile(boostPathToQString(pathConfig)));
+}
+
 void SubstituteFonts(const QString &language) {
 #if defined(Q_OS_MAC)
 // Background:
@@ -459,7 +442,7 @@ void SubstituteFonts(const QString &language) {
                 QFont::insertSubstitution(".Helvetica Neue DeskInterface",
                                           "Heiti SC");
             } else if (language == "ja") {
-                // Japanesee
+                // Japanese
                 QFont::insertSubstitution(".Helvetica Neue DeskInterface",
                                           "Songti SC");
             } else {
@@ -889,11 +872,11 @@ void setClipboard(const QString &str) {
 }
 
 fs::path qstringToBoostPath(const QString &path) {
-    return fs::path(path.toStdString(), utf8);
+    return fs::path(path.toStdString());
 }
 
 QString boostPathToQString(const fs::path &path) {
-    return QString::fromStdString(path.string(utf8));
+    return QString::fromStdString(path.string());
 }
 
 QString formatDurationStr(int secs) {
@@ -998,6 +981,20 @@ QString formatNiceTimeOffset(qint64 secs) {
                                               remainder / WEEK_IN_SECONDS));
     }
     return timeBehindText;
+}
+
+QString formatBytes(uint64_t bytes) {
+    if (bytes < 1024) {
+        return QString(QObject::tr("%1 B")).arg(bytes);
+    }
+    if (bytes < 1024 * 1024) {
+        return QString(QObject::tr("%1 KB")).arg(bytes / 1024);
+    }
+    if (bytes < 1024 * 1024 * 1024) {
+        return QString(QObject::tr("%1 MB")).arg(bytes / 1024 / 1024);
+    }
+
+    return QString(QObject::tr("%1 GB")).arg(bytes / 1024 / 1024 / 1024);
 }
 
 void ClickableLabel::mouseReleaseEvent(QMouseEvent *event) {

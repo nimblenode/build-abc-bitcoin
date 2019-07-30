@@ -2,8 +2,11 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "consensus/merkle.h"
-#include "test/test_bitcoin.h"
+#include <consensus/merkle.h>
+
+#include <utilstrencodings.h>
+
+#include <test/test_bitcoin.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -269,7 +272,7 @@ BOOST_AUTO_TEST_CASE(merkle_test) {
             // branches.
             if (mutate == 0) {
                 for (int loop = 0; loop < std::min(ntx, 16); loop++) {
-                    // If ntx <= 16, try all branches. Otherise, try 16 random
+                    // If ntx <= 16, try all branches. Otherwise, try 16 random
                     // ones.
                     int mtx = loop;
                     if (ntx > 16) {

@@ -2,13 +2,13 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "key.h"
+#include <key.h>
 
-#include "arith_uint256.h"
-#include "crypto/common.h"
-#include "crypto/hmac_sha512.h"
-#include "pubkey.h"
-#include "random.h"
+#include <arith_uint256.h>
+#include <crypto/common.h>
+#include <crypto/hmac_sha512.h>
+#include <pubkey.h>
+#include <random.h>
 
 #include <secp256k1.h>
 #include <secp256k1_recovery.h>
@@ -163,7 +163,7 @@ CPrivKey CKey::GetPrivKey() const {
     privkey.resize(279);
     privkeylen = 279;
     ret = ec_privkey_export_der(
-        secp256k1_context_sign, (uint8_t *)&privkey[0], &privkeylen, begin(),
+        secp256k1_context_sign, (uint8_t *)privkey.data(), &privkeylen, begin(),
         fCompressed ? SECP256K1_EC_COMPRESSED : SECP256K1_EC_UNCOMPRESSED);
     assert(ret);
     privkey.resize(privkeylen);
@@ -201,7 +201,7 @@ bool CKey::SignECDSA(const uint256 &hash, std::vector<uint8_t> &vchSig,
                                    test_case ? extra_entropy : nullptr);
     assert(ret);
     secp256k1_ecdsa_signature_serialize_der(
-        secp256k1_context_sign, (uint8_t *)&vchSig[0], &nSigLen, &sig);
+        secp256k1_context_sign, (uint8_t *)vchSig.data(), &nSigLen, &sig);
     vchSig.resize(nSigLen);
     return true;
 }
@@ -259,10 +259,10 @@ bool CKey::SignCompact(const uint256 &hash,
     return true;
 }
 
-bool CKey::Load(CPrivKey &privkey, CPubKey &vchPubKey,
+bool CKey::Load(const CPrivKey &privkey, const CPubKey &vchPubKey,
                 bool fSkipCheck = false) {
     if (!ec_privkey_import_der(secp256k1_context_sign, (uint8_t *)begin(),
-                               &privkey[0], privkey.size()))
+                               privkey.data(), privkey.size()))
         return false;
     fCompressed = vchPubKey.IsCompressed();
     fValid = true;
@@ -311,8 +311,8 @@ void CExtKey::SetMaster(const uint8_t *seed, unsigned int nSeedLen) {
     CHMAC_SHA512(hashkey, sizeof(hashkey))
         .Write(seed, nSeedLen)
         .Finalize(vout.data());
-    key.Set(&vout[0], &vout[32], true);
-    memcpy(chaincode.begin(), &vout[32], 32);
+    key.Set(vout.data(), vout.data() + 32, true);
+    memcpy(chaincode.begin(), vout.data() + 32, 32);
     nDepth = 0;
     nChild = 0;
     memset(vchFingerprint, 0, sizeof(vchFingerprint));

@@ -6,10 +6,10 @@
 #ifndef BITCOIN_CHAINPARAMS_H
 #define BITCOIN_CHAINPARAMS_H
 
-#include "chainparamsbase.h"
-#include "consensus/params.h"
-#include "primitives/block.h"
-#include "protocol.h"
+#include <chainparamsbase.h>
+#include <consensus/params.h>
+#include <primitives/block.h>
+#include <protocol.h>
 
 #include <memory>
 #include <vector>
@@ -105,6 +105,9 @@ protected:
  * @throws a std::runtime_error if the chain is not supported.
  */
 std::unique_ptr<CChainParams> CreateChainParams(const std::string &chain);
+
+CBlock CreateGenesisBlock(uint32_t nTime, uint32_t nNonce, uint32_t nBits,
+                          int32_t nVersion, const Amount genesisReward);
 
 /**
  * Return the currently selected parameters. This won't change after app

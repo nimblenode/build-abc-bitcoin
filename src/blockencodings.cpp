@@ -2,17 +2,19 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "blockencodings.h"
-#include "chainparams.h"
-#include "config.h"
-#include "consensus/consensus.h"
-#include "consensus/validation.h"
-#include "hash.h"
-#include "random.h"
-#include "streams.h"
-#include "txmempool.h"
-#include "util.h"
-#include "validation.h"
+#include <blockencodings.h>
+
+#include <chainparams.h>
+#include <config.h>
+#include <consensus/consensus.h>
+#include <consensus/validation.h>
+#include <crypto/sha256.h>
+#include <crypto/siphash.h>
+#include <random.h>
+#include <streams.h>
+#include <txmempool.h>
+#include <util.h>
+#include <validation.h>
 
 #include <unordered_map>
 
@@ -174,7 +176,7 @@ ReadStatus PartiallyDownloadedBlock::InitData(
                 // If we find two mempool/extra txn that match the short id,
                 // just request it. This should be rare enough that the extra
                 // bandwidth doesn't matter, but eating a round-trip due to
-                // FillBlock failure would be annoying. Note that we dont want
+                // FillBlock failure would be annoying. Note that we don't want
                 // duplication between extra_txns and mempool to trigger this
                 // case, so we compare hashes first.
                 if (txns_available[idit->second] &&
@@ -207,7 +209,7 @@ ReadStatus PartiallyDownloadedBlock::InitData(
 bool PartiallyDownloadedBlock::IsTxAvailable(size_t index) const {
     assert(!header.IsNull());
     assert(index < txns_available.size());
-    return txns_available[index] ? true : false;
+    return txns_available[index] != nullptr;
 }
 
 ReadStatus PartiallyDownloadedBlock::FillBlock(

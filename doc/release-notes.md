@@ -1,12 +1,14 @@
-Bitcoin ABC version 0.19.0 is now available from:
+Bitcoin ABC version 0.19.11 is now available from:
 
-  <https://download.bitcoinabc.org/0.19.0/>
+  <https://download.bitcoinabc.org/0.19.11/>
 
 This release includes the following features and fixes:
- - Support for May 2019 upgrade features, as detailed at https://github.com/bitcoincashorg/bitcoincash.org/blob/master/spec/2019-05-15-upgrade.md
-    - Schnorr signatures in OP_CHECK(DATA)SIG(VERIFY): https://github.com/bitcoincashorg/bitcoincash.org/blob/master/spec/2019-05-15-schnorr.md
-    - Segwit P2SH recovery: https://github.com/bitcoincashorg/bitcoincash.org/blob/master/spec/2019-05-15-segwit-recovery.md
- - Bump automatic replay protection to November 2019 upgrade
- - Fix bitcoin-qt crash on start for users who had previously selected minimum absolute fee.
- - Fix a regression in `getrawtransaction` output where `confirmations`, `time`, and `blocktime` were not present.
- - Fixed incorrect naming for the bitcoin-qt.desktop icon for Debian/Ubuntu distributions.
+
+Dynamic loading of wallets
+--------------------------
+
+Previously, wallets could only be loaded at startup, by specifying `-wallet` parameters on the command line or in the bitcoin.conf file. It is now possible to load wallets dynamically at runtime by calling the `loadwallet` RPC.
+
+The wallet can be specified as file/directory basename (which must be located in the `walletdir` directory), or as an absolute path to a file/directory.
+
+This feature is currently only available through the RPC interface. Wallets loaded in this way will not display in the bitcoin-qt GUI.

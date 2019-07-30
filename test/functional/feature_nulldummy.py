@@ -2,16 +2,27 @@
 # Copyright (c) 2016 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
+"""Test NULLDUMMY softfork.
 
-from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import *
-from test_framework.messages import FromHex, ToHex
-from test_framework.mininode import CTransaction, network_thread_start
-from test_framework.blocktools import create_coinbase, create_block
-from test_framework.script import CScript
+Connect to a single node.
+Generate 2 blocks (save the coinbases for later).
+Generate 427 more blocks.
+[Policy/Consensus] Check that NULLDUMMY compliant transactions are accepted in the 430th block.
+[Policy] Check that non-NULLDUMMY transactions are rejected before activation.
+[Consensus] Check that the new NULLDUMMY rules are not enforced on the 431st block.
+[Policy/Consensus] Check that the new NULLDUMMY rules are enforced on the 432nd block.
+"""
+
 import time
 
-NULLDUMMY_ERROR = "64: non-mandatory-script-verify-flag (Dummy CHECKMULTISIG argument must be zero)"
+from test_framework.blocktools import create_block, create_coinbase
+from test_framework.messages import CTransaction, FromHex, ToHex
+from test_framework.mininode import network_thread_start
+from test_framework.script import CScript
+from test_framework.test_framework import BitcoinTestFramework
+from test_framework.util import assert_equal, assert_raises_rpc_error
+
+NULLDUMMY_ERROR = "non-mandatory-script-verify-flag (Dummy CHECKMULTISIG argument must be zero) (code 64)"
 
 
 def trueDummy(tx):
@@ -27,18 +38,6 @@ def trueDummy(tx):
     tx.rehash()
 
 
-'''
-This test is meant to exercise NULLDUMMY softfork.
-Connect to a single node.
-Generate 2 blocks (save the coinbases for later).
-Generate 427 more blocks.
-[Policy/Consensus] Check that NULLDUMMY compliant transactions are accepted in the 430th block.
-[Policy] Check that non-NULLDUMMY transactions are rejected before activation.
-[Consensus] Check that the new NULLDUMMY rules are not enforced on the 431st block.
-[Policy/Consensus] Check that the new NULLDUMMY rules are enforced on the 432nd block.
-'''
-
-
 class NULLDUMMYTest(BitcoinTestFramework):
 
     def set_test_params(self):
@@ -48,14 +47,17 @@ class NULLDUMMYTest(BitcoinTestFramework):
 
     def run_test(self):
         self.address = self.nodes[0].getnewaddress()
-        self.ms_address = self.nodes[0].addmultisigaddress(1, [self.address])
+        self.ms_address = self.nodes[0].addmultisigaddress(1, [self.address])[
+            'address']
 
         network_thread_start()
-        self.coinbase_blocks = self.nodes[0].generate(2)  # Block 2
+        # Block 2
+        self.coinbase_blocks = self.nodes[0].generate(2)
         coinbase_txid = []
         for i in self.coinbase_blocks:
             coinbase_txid.append(self.nodes[0].getblock(i)['tx'][0])
-        self.nodes[0].generate(427)  # Block 429
+        # Block 429
+        self.nodes[0].generate(427)
         self.lastblockhash = self.nodes[0].getbestblockhash()
         self.tip = int("0x" + self.lastblockhash, 0)
         self.lastblockheight = 429
@@ -87,7 +89,7 @@ class NULLDUMMYTest(BitcoinTestFramework):
         inputs = [{"txid": txid, "vout": 0}]
         outputs = {to_address: amount}
         rawtx = node.createrawtransaction(inputs, outputs)
-        signresult = node.signrawtransaction(rawtx)
+        signresult = node.signrawtransactionwithwallet(rawtx)
         return FromHex(CTransaction(), signresult['hex'])
 
     def block_submit(self, node, txs, accept=False):

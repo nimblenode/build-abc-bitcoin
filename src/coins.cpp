@@ -2,18 +2,16 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "coins.h"
+#include <coins.h>
 
-#include "consensus/consensus.h"
-#include "memusage.h"
-#include "random.h"
+#include <consensus/consensus.h>
+#include <memusage.h>
+#include <random.h>
+#include <version.h>
 
 #include <cassert>
 
 bool CCoinsView::GetCoin(const COutPoint &outpoint, Coin &coin) const {
-    return false;
-}
-bool CCoinsView::HaveCoin(const COutPoint &outpoint) const {
     return false;
 }
 uint256 CCoinsView::GetBestBlock() const {
@@ -27,6 +25,10 @@ bool CCoinsView::BatchWrite(CCoinsMap &mapCoins, const uint256 &hashBlock) {
 }
 CCoinsViewCursor *CCoinsView::Cursor() const {
     return nullptr;
+}
+bool CCoinsView::HaveCoin(const COutPoint &outpoint) const {
+    Coin coin;
+    return GetCoin(outpoint, coin);
 }
 
 CCoinsViewBacked::CCoinsViewBacked(CCoinsView *viewIn) : base(viewIn) {}
@@ -97,7 +99,7 @@ bool CCoinsViewCache::GetCoin(const COutPoint &outpoint, Coin &coin) const {
         return false;
     }
     coin = it->second.coin;
-    return true;
+    return !coin.IsSpent();
 }
 
 void CCoinsViewCache::AddCoin(const COutPoint &outpoint, Coin coin,
@@ -178,7 +180,7 @@ bool CCoinsViewCache::HaveCoin(const COutPoint &outpoint) const {
 
 bool CCoinsViewCache::HaveCoinInCache(const COutPoint &outpoint) const {
     CCoinsMap::const_iterator it = cacheCoins.find(outpoint);
-    return it != cacheCoins.end();
+    return (it != cacheCoins.end() && !it->second.coin.IsSpent());
 }
 
 uint256 CCoinsViewCache::GetBestBlock() const {

@@ -8,19 +8,20 @@
 #define BITCOIN_VALIDATION_H
 
 #if defined(HAVE_CONFIG_H)
-#include "config/bitcoin-config.h"
+#include <config/bitcoin-config.h>
 #endif
 
-#include "amount.h"
-#include "blockfileinfo.h"
-#include "coins.h"
-#include "consensus/consensus.h"
-#include "diskblockpos.h"
-#include "fs.h"
-#include "protocol.h" // For CMessageHeader::MessageMagic
-#include "script/script_error.h"
-#include "sync.h"
-#include "versionbits.h"
+#include <amount.h>
+#include <blockfileinfo.h>
+#include <coins.h>
+#include <consensus/consensus.h>
+#include <consensus/params.h>
+#include <flatfile.h>
+#include <fs.h>
+#include <protocol.h> // For CMessageHeader::MessageMagic
+#include <script/script_error.h>
+#include <sync.h>
+#include <versionbits.h>
 
 #include <algorithm>
 #include <atomic>
@@ -32,10 +33,12 @@
 #include <utility>
 #include <vector>
 
+class arith_uint256;
+
 class CBlockIndex;
 class CBlockTreeDB;
-class CBloomFilter;
 class CChainParams;
+class CChain;
 class CCoinsViewDB;
 class CConnman;
 class CInv;
@@ -43,7 +46,6 @@ class Config;
 class CScriptCheck;
 class CTxMemPool;
 class CTxUndo;
-class CValidationInterface;
 class CValidationState;
 
 struct CDiskBlockPos;
@@ -54,9 +56,9 @@ struct LockPoints;
 #define MIN_TRANSACTION_SIZE                                                   \
     (::GetSerializeSize(CTransaction(), SER_NETWORK, PROTOCOL_VERSION))
 
-/** Default for DEFAULT_WHITELISTRELAY. */
+/** Default for -whitelistrelay. */
 static const bool DEFAULT_WHITELISTRELAY = true;
-/** Default for DEFAULT_WHITELISTFORCERELAY. */
+/** Default for -whitelistforcerelay. */
 static const bool DEFAULT_WHITELISTFORCERELAY = true;
 /** Default for -minrelaytxfee, minimum relay fee for transactions */
 static const Amount DEFAULT_MIN_RELAY_TX_FEE_PER_KB(1000 * SATOSHI);
@@ -133,7 +135,7 @@ static const unsigned int DATABASE_FLUSH_INTERVAL = 24 * 60 * 60;
 /** Maximum length of reject messages. */
 static const unsigned int MAX_REJECT_MESSAGE_LENGTH = 111;
 /** Average delay between local address broadcasts in seconds. */
-static const unsigned int AVG_LOCAL_ADDRESS_BROADCAST_INTERVAL = 24 * 24 * 60;
+static const unsigned int AVG_LOCAL_ADDRESS_BROADCAST_INTERVAL = 24 * 60 * 60;
 /** Average delay between peer address broadcasts in seconds. */
 static const unsigned int AVG_ADDRESS_BROADCAST_INTERVAL = 30;
 /**
@@ -206,22 +208,27 @@ static const int64_t DEFAULT_MIN_FINALIZATION_DELAY = 2 * 60 * 60;
 extern CScript COINBASE_FLAGS;
 extern CCriticalSection cs_main;
 extern CTxMemPool g_mempool;
+extern std::atomic_bool g_is_mempool_loaded;
 extern uint64_t nLastBlockTx;
 extern uint64_t nLastBlockSize;
 extern const std::string strMessageMagic;
-extern CWaitableCriticalSection g_best_block_mutex;
-extern CConditionVariable g_best_block_cv;
+extern Mutex g_best_block_mutex;
+extern std::condition_variable g_best_block_cv;
 extern uint256 g_best_block;
 extern std::atomic_bool fImporting;
 extern std::atomic_bool fReindex;
 extern int nScriptCheckThreads;
-extern bool fTxIndex;
 extern bool fIsBareMultisigStd;
 extern bool fRequireStandard;
 extern bool fCheckBlockIndex;
 extern bool fCheckpointsEnabled;
 extern size_t nCoinCacheUsage;
 
+/**
+ * A fee rate smaller than this is considered zero fee (for relaying, mining and
+ * transaction creation)
+ */
+extern CFeeRate minRelayTxFee;
 /**
  * Absolute maximum transaction fee (in satoshis) used by wallet and mempool
  * (rejects high fee in sendrawtransaction)
@@ -248,9 +255,6 @@ extern arith_uint256 nMinimumChainWork;
  * Best header we've seen so far (used for getheaders queries' starting points).
  */
 extern CBlockIndex *pindexBestHeader;
-
-/** Minimum disk space required - used in CheckDiskSpace() */
-static const uint64_t nMinDiskSpace = 52428800;
 
 /** Pruning-related variables and constants */
 /** True if any block files have ever been pruned. */
@@ -344,11 +348,6 @@ bool ProcessNewBlockHeaders(const Config &config,
                             CBlockHeader *first_invalid = nullptr);
 
 /**
- * Check whether enough disk space is available for an incoming block.
- */
-bool CheckDiskSpace(uint64_t nAdditionalBytes = 0);
-
-/**
  * Open a block file (blk?????.dat).
  */
 FILE *OpenBlockFile(const CDiskBlockPos &pos, bool fReadOnly = false);
@@ -356,7 +355,7 @@ FILE *OpenBlockFile(const CDiskBlockPos &pos, bool fReadOnly = false);
 /**
  * Translation to a filesystem path.
  */
-fs::path GetBlockPosFilename(const CDiskBlockPos &pos, const char *prefix);
+fs::path GetBlockPosFilename(const CDiskBlockPos &pos);
 
 /**
  * Import blocks from an external file.
@@ -401,7 +400,8 @@ bool IsInitialBlockDownload();
  * Retrieve a transaction (from memory pool, or from disk, if possible).
  */
 bool GetTransaction(const Config &config, const TxId &txid, CTransactionRef &tx,
-                    uint256 &hashBlock, bool fAllowSlow = false);
+                    uint256 &hashBlock, bool fAllowSlow = false,
+                    CBlockIndex *blockIndex = nullptr);
 
 /**
  * Find the best known block, and make it the active tip of the block chain.
@@ -421,7 +421,13 @@ Amount GetBlockSubsidy(int nHeight, const Consensus::Params &consensusParams);
  * Guess verification progress (as a fraction between 0.0=genesis and
  * 1.0=current tip).
  */
-double GuessVerificationProgress(const ChainTxData &data, CBlockIndex *pindex);
+double GuessVerificationProgress(const ChainTxData &data,
+                                 const CBlockIndex *pindex);
+
+/**
+ * Calculate the amount of disk space the block & undo files currently use.
+ */
+uint64_t CalculateCurrentUsage();
 
 /**
  * Mark one block file as pruned.
@@ -433,14 +439,12 @@ void PruneOneBlockFile(const int fileNumber);
  */
 void UnlinkPrunedFiles(const std::set<int> &setFilesToPrune);
 
-/** Create a new block index entry for a given block hash */
-CBlockIndex *InsertBlockIndex(uint256 hash);
 /** Flush all state, indexes and buffers to disk. */
 void FlushStateToDisk();
 /** Prune block files and flush state to disk. */
 void PruneAndFlush();
 /** Prune block files up to a given height */
-void PruneBlockFilesManual(int nPruneUpToHeight);
+void PruneBlockFilesManual(int nManualPruneHeight);
 
 /**
  * (try to) add transaction to memory pool
@@ -449,7 +453,8 @@ bool AcceptToMemoryPool(const Config &config, CTxMemPool &pool,
                         CValidationState &state, const CTransactionRef &tx,
                         bool fLimitFree, bool *pfMissingInputs,
                         bool fOverrideMempoolLimit = false,
-                        const Amount nAbsurdFee = Amount::zero());
+                        const Amount nAbsurdFee = Amount::zero(),
+                        bool test_accept = false);
 
 /** Convert CValidationState to a human-readable message for logging */
 std::string FormatStateMessage(const CValidationState &state);
@@ -525,7 +530,7 @@ private:
 public:
     CScriptCheck()
         : amount(), ptxTo(nullptr), nIn(0), nFlags(0), cacheStore(false),
-          error(SCRIPT_ERR_UNKNOWN_ERROR), txdata() {}
+          error(ScriptError::UNKNOWN), txdata() {}
 
     CScriptCheck(const CScript &scriptPubKeyIn, const Amount amountIn,
                  const CTransaction &txToIn, unsigned int nInIn,
@@ -533,7 +538,7 @@ public:
                  const PrecomputedTransactionData &txdataIn)
         : scriptPubKey(scriptPubKeyIn), amount(amountIn), ptxTo(&txToIn),
           nIn(nInIn), nFlags(nFlagsIn), cacheStore(cacheIn),
-          error(SCRIPT_ERR_UNKNOWN_ERROR), txdata(txdataIn) {}
+          error(ScriptError::UNKNOWN), txdata(txdataIn) {}
 
     bool operator()();
 
@@ -660,7 +665,7 @@ const CBlockIndex *GetFinalizedBlock();
 bool IsBlockFinalized(const CBlockIndex *pindex);
 
 /** The currently-connected chain of blocks (protected by cs_main). */
-extern CChain chainActive;
+extern CChain &chainActive;
 
 /**
  * Global variable that points to the coins database (protected by cs_main)
@@ -685,8 +690,6 @@ extern std::unique_ptr<CBlockTreeDB> pblocktree;
  */
 int GetSpendHeight(const CCoinsViewCache &inputs);
 
-extern VersionBitsCache versionbitscache;
-
 /**
  * Determine what nVersion a new block should use.
  */
@@ -701,10 +704,6 @@ int32_t ComputeBlockVersion(const CBlockIndex *pindexPrev,
 static const unsigned int REJECT_INTERNAL = 0x100;
 /** Too high fee. Can not be triggered by P2P transactions */
 static const unsigned int REJECT_HIGHFEE = 0x100;
-/** Transaction is already known (either in mempool or blockchain) */
-static const unsigned int REJECT_ALREADY_KNOWN = 0x101;
-/** Transaction conflicts with a transaction already known */
-static const unsigned int REJECT_CONFLICT = 0x102;
 /** Block conflicts with a transaction already known */
 static const unsigned int REJECT_AGAINST_FINALIZED = 0x103;
 
@@ -712,7 +711,7 @@ static const unsigned int REJECT_AGAINST_FINALIZED = 0x103;
 CBlockFileInfo *GetBlockFileInfo(size_t n);
 
 /** Dump the mempool to disk. */
-void DumpMempool();
+bool DumpMempool();
 
 /** Load the mempool from disk. */
 bool LoadMempool(const Config &config);

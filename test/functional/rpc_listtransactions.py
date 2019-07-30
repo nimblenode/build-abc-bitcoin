@@ -2,19 +2,21 @@
 # Copyright (c) 2014-2016 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
+"""Test the listtransactions API."""
 
-# Exercise the listtransactions API
+from decimal import Decimal
 
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import *
+from test_framework.util import assert_array_result
 
 
 class ListTransactionsTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
-        self.enable_mocktime()
 
     def run_test(self):
+        # Leave IBD
+        self.nodes[0].generate(1)
         # Simple send, 0 to 1:
         txid = self.nodes[0].sendtoaddress(self.nodes[1].getnewaddress(), 0.1)
         self.sync_all()
@@ -75,8 +77,9 @@ class ListTransactionsTest(BitcoinTestFramework):
                             {"category": "receive", "amount": Decimal("0.44")},
                             {"txid": txid, "account": "toself"})
 
-        multisig = self.nodes[1].createmultisig(
-            1, [self.nodes[1].getnewaddress()])
+        pubkey = self.nodes[1].getaddressinfo(
+            self.nodes[1].getnewaddress())['pubkey']
+        multisig = self.nodes[1].createmultisig(1, [pubkey])
         self.nodes[0].importaddress(
             multisig["redeemScript"], "watchonly", False, True)
         txid = self.nodes[1].sendtoaddress(multisig["address"], 0.1)

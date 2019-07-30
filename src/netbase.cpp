@@ -3,22 +3,20 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "netbase.h"
+#include <netbase.h>
 
-#include "hash.h"
-#include "random.h"
-#include "sync.h"
-#include "uint256.h"
-#include "util.h"
-#include "utilstrencodings.h"
+#include <hash.h>
+#include <random.h>
+#include <sync.h>
+#include <uint256.h>
+#include <util.h>
+#include <utilstrencodings.h>
 
 #include <atomic>
 
 #ifndef WIN32
 #include <fcntl.h>
 #endif
-
-#include <boost/algorithm/string/case_conv.hpp> // for to_lower()
 
 #if !defined(MSG_NOSIGNAL)
 #define MSG_NOSIGNAL 0
@@ -37,10 +35,21 @@ static const int SOCKS5_RECV_TIMEOUT = 20 * 1000;
 static std::atomic<bool> interruptSocks5Recv(false);
 
 enum Network ParseNetwork(std::string net) {
-    boost::to_lower(net);
-    if (net == "ipv4") return NET_IPV4;
-    if (net == "ipv6") return NET_IPV6;
-    if (net == "tor" || net == "onion") return NET_TOR;
+    Downcase(net);
+    if (net == "ipv4") {
+        return NET_IPV4;
+    }
+    if (net == "ipv6") {
+        return NET_IPV6;
+    }
+    if (net == "onion") {
+        return NET_ONION;
+    }
+    if (net == "tor") {
+        LogPrintf("Warning: net name 'tor' is deprecated and will be removed "
+                  "in the future. You should use 'onion' instead.\n");
+        return NET_ONION;
+    }
     return NET_UNROUTABLE;
 }
 
@@ -50,7 +59,7 @@ std::string GetNetworkName(enum Network net) {
             return "ipv4";
         case NET_IPV6:
             return "ipv6";
-        case NET_TOR:
+        case NET_ONION:
             return "onion";
         default:
             return "";
@@ -82,7 +91,9 @@ static bool LookupIntern(const char *pszName, std::vector<CNetAddr> &vIP,
 #endif
     struct addrinfo *aiRes = nullptr;
     int nErr = getaddrinfo(pszName, nullptr, &aiHint, &aiRes);
-    if (nErr) return false;
+    if (nErr) {
+        return false;
+    }
 
     struct addrinfo *aiTrav = aiRes;
     while (aiTrav != nullptr &&
@@ -132,25 +143,32 @@ bool LookupHost(const char *pszName, std::vector<CNetAddr> &vIP,
 bool LookupHost(const char *pszName, CNetAddr &addr, bool fAllowLookup) {
     std::vector<CNetAddr> vIP;
     LookupHost(pszName, vIP, 1, fAllowLookup);
-    if (vIP.empty()) return false;
+    if (vIP.empty()) {
+        return false;
+    }
     addr = vIP.front();
     return true;
 }
 
 bool Lookup(const char *pszName, std::vector<CService> &vAddr, int portDefault,
             bool fAllowLookup, unsigned int nMaxSolutions) {
-    if (pszName[0] == 0) return false;
+    if (pszName[0] == 0) {
+        return false;
+    }
     int port = portDefault;
-    std::string hostname = "";
+    std::string hostname;
     SplitHostPort(std::string(pszName), port, hostname);
 
     std::vector<CNetAddr> vIP;
     bool fRet =
         LookupIntern(hostname.c_str(), vIP, nMaxSolutions, fAllowLookup);
-    if (!fRet) return false;
+    if (!fRet) {
+        return false;
+    }
     vAddr.resize(vIP.size());
-    for (unsigned int i = 0; i < vIP.size(); i++)
+    for (unsigned int i = 0; i < vIP.size(); i++) {
         vAddr[i] = CService(vIP[i], port);
+    }
     return true;
 }
 
@@ -158,7 +176,9 @@ bool Lookup(const char *pszName, CService &addr, int portDefault,
             bool fAllowLookup) {
     std::vector<CService> vService;
     bool fRet = Lookup(pszName, vService, portDefault, fAllowLookup, 1);
-    if (!fRet) return false;
+    if (!fRet) {
+        return false;
+    }
     addr = vService[0];
     return true;
 }
@@ -167,7 +187,9 @@ CService LookupNumeric(const char *pszName, int portDefault) {
     CService addr;
     // "1.2:345" will fail to resolve the ip, but will still set the port.
     // If the ip fails to resolve, re-init the result.
-    if (!Lookup(pszName, addr, portDefault, false)) addr = CService();
+    if (!Lookup(pszName, addr, portDefault, false)) {
+        addr = CService();
+    }
     return addr;
 }
 
@@ -351,8 +373,9 @@ static bool Socks5(const std::string &strDest, int port,
         std::vector<uint8_t> vAuth;
         // Current (and only) version of user/pass subnegotiation
         vAuth.push_back(0x01);
-        if (auth->username.size() > 255 || auth->password.size() > 255)
+        if (auth->username.size() > 255 || auth->password.size() > 255) {
             return error("Proxy username or password too long");
+        }
         vAuth.push_back(auth->username.size());
         vAuth.insert(vAuth.end(), auth->username.begin(), auth->username.end());
         vAuth.push_back(auth->password.size());
@@ -565,7 +588,9 @@ bool ConnectSocketDirectly(const CService &addrConnect, const SOCKET &hSocket,
 
 bool SetProxy(enum Network net, const proxyType &addrProxy) {
     assert(net >= 0 && net < NET_MAX);
-    if (!addrProxy.IsValid()) return false;
+    if (!addrProxy.IsValid()) {
+        return false;
+    }
     LOCK(cs_proxyInfos);
     proxyInfo[net] = addrProxy;
     return true;
@@ -574,13 +599,17 @@ bool SetProxy(enum Network net, const proxyType &addrProxy) {
 bool GetProxy(enum Network net, proxyType &proxyInfoOut) {
     assert(net >= 0 && net < NET_MAX);
     LOCK(cs_proxyInfos);
-    if (!proxyInfo[net].IsValid()) return false;
+    if (!proxyInfo[net].IsValid()) {
+        return false;
+    }
     proxyInfoOut = proxyInfo[net];
     return true;
 }
 
 bool SetNameProxy(const proxyType &addrProxy) {
-    if (!addrProxy.IsValid()) return false;
+    if (!addrProxy.IsValid()) {
+        return false;
+    }
     LOCK(cs_proxyInfos);
     nameProxy = addrProxy;
     return true;
@@ -588,7 +617,9 @@ bool SetNameProxy(const proxyType &addrProxy) {
 
 bool GetNameProxy(proxyType &nameProxyOut) {
     LOCK(cs_proxyInfos);
-    if (!nameProxy.IsValid()) return false;
+    if (!nameProxy.IsValid()) {
+        return false;
+    }
     nameProxyOut = nameProxy;
     return true;
 }
@@ -613,7 +644,9 @@ bool ConnectThroughProxy(const proxyType &proxy, const std::string &strDest,
                          bool *outProxyConnectionFailed) {
     // first connect to proxy server
     if (!ConnectSocketDirectly(proxy.proxy, hSocket, nTimeout)) {
-        if (outProxyConnectionFailed) *outProxyConnectionFailed = true;
+        if (outProxyConnectionFailed) {
+            *outProxyConnectionFailed = true;
+        }
         return false;
     }
     // do socks negotiation
@@ -680,28 +713,39 @@ std::string NetworkErrorString(int err) {
 #else
 std::string NetworkErrorString(int err) {
     char buf[256];
-    const char *s = buf;
     buf[0] = 0;
-/* Too bad there are two incompatible implementations of the
- * thread-safe strerror. */
+    /**
+     * Too bad there are two incompatible implementations of the
+     * thread-safe strerror.
+     */
+    const char *s;
 #ifdef STRERROR_R_CHAR_P
     /* GNU variant can return a pointer outside the passed buffer */
     s = strerror_r(err, buf, sizeof(buf));
 #else
+    s = buf;
     /* POSIX variant always returns message in buffer */
-    if (strerror_r(err, buf, sizeof(buf))) buf[0] = 0;
+    if (strerror_r(err, buf, sizeof(buf))) {
+        buf[0] = 0;
+    }
 #endif
     return strprintf("%s (%d)", s, err);
 }
 #endif
 
 bool CloseSocket(SOCKET &hSocket) {
-    if (hSocket == INVALID_SOCKET) return false;
+    if (hSocket == INVALID_SOCKET) {
+        return false;
+    }
 #ifdef WIN32
     int ret = closesocket(hSocket);
 #else
     int ret = close(hSocket);
 #endif
+    if (ret) {
+        LogPrintf("Socket close failed: %d. Error: %s\n", hSocket,
+                  NetworkErrorString(WSAGetLastError()));
+    }
     hSocket = INVALID_SOCKET;
     return ret != SOCKET_ERROR;
 }

@@ -7,9 +7,9 @@ Test that mining RPC continues to supply correct transaction metadata after
 the Nov 2018 protocol upgrade which engages canonical transaction ordering
 """
 
-import time
-import random
 import decimal
+import random
+import time
 
 from test_framework.test_framework import BitcoinTestFramework
 
@@ -87,7 +87,7 @@ class CTORMiningTest(BitcoinTestFramework):
             outputs[addr] -= fee
 
             rawtx = mining_node.createrawtransaction(inputs, outputs)
-            signedtx = mining_node.signrawtransaction(rawtx)
+            signedtx = mining_node.signrawtransactionwithwallet(rawtx)
             txid = mining_node.sendrawtransaction(signedtx['hex'])
             # number of outputs is the same as the number of sigops in this
             # case

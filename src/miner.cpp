@@ -3,41 +3,35 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "miner.h"
+#include <miner.h>
 
-#include "amount.h"
-#include "chain.h"
-#include "chainparams.h"
-#include "coins.h"
-#include "config.h"
-#include "consensus/activation.h"
-#include "consensus/consensus.h"
-#include "consensus/merkle.h"
-#include "consensus/tx_verify.h"
-#include "consensus/validation.h"
-#include "hash.h"
-#include "net.h"
-#include "policy/policy.h"
-#include "pow.h"
-#include "primitives/transaction.h"
-#include "script/standard.h"
-#include "timedata.h"
-#include "txmempool.h"
-#include "util.h"
-#include "utilmoneystr.h"
-#include "validation.h"
-#include "validationinterface.h"
+#include <amount.h>
+#include <chain.h>
+#include <chainparams.h>
+#include <coins.h>
+#include <config.h>
+#include <consensus/activation.h>
+#include <consensus/consensus.h>
+#include <consensus/merkle.h>
+#include <consensus/tx_verify.h>
+#include <consensus/validation.h>
+#include <hash.h>
+#include <net.h>
+#include <policy/policy.h>
+#include <pow.h>
+#include <primitives/transaction.h>
+#include <script/standard.h>
+#include <timedata.h>
+#include <txmempool.h>
+#include <util.h>
+#include <utilmoneystr.h>
+#include <validation.h>
+#include <validationinterface.h>
 
 #include <algorithm>
 #include <queue>
 #include <utility>
 
-//////////////////////////////////////////////////////////////////////////////
-//
-// BitcoinMiner
-//
-
-//
 // Unconfirmed transactions in the memory pool often depend on other
 // transactions in the memory pool. When we select transactions from the
 // pool, we select by highest priority or fee rate, so we might consider
@@ -140,10 +134,11 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
     pblock = &pblocktemplate->block;
 
     // Add dummy coinbase tx as first transaction.  It is updated at the end.
-    pblocktemplate->entries.emplace_back(CTransactionRef(), -SATOSHI, -1);
+    pblocktemplate->entries.emplace_back(CTransactionRef(), -SATOSHI, 0, -1);
 
     LOCK2(cs_main, mempool->cs);
     CBlockIndex *pindexPrev = chainActive.Tip();
+    assert(pindexPrev != nullptr);
     nHeight = pindexPrev->nHeight + 1;
 
     const CChainParams &chainparams = config->GetChainParams();
@@ -203,7 +198,11 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
     }
 
     pblocktemplate->entries[0].tx = MakeTransactionRef(coinbaseTx);
-    pblocktemplate->entries[0].fees = -1 * nFees;
+    // Note: For the Coinbase, the template entry fields aside from the `tx` are
+    // not used anywhere at the time of writing.  The mining rpc throws out the
+    // entire transaction in fact. The tx itself is only used during regtest
+    // mode.
+    pblocktemplate->entries[0].txFee = -1 * nFees;
 
     uint64_t nSerializeSize =
         GetSerializeSize(*pblock, SER_NETWORK, PROTOCOL_VERSION);
@@ -216,8 +215,8 @@ BlockAssembler::CreateNewBlock(const CScript &scriptPubKeyIn) {
     UpdateTime(pblock, *config, pindexPrev);
     pblock->nBits = GetNextWorkRequired(pindexPrev, pblock, *config);
     pblock->nNonce = 0;
-    pblocktemplate->entries[0].sigOpCount = GetSigOpCountWithoutP2SH(
-        *pblocktemplate->entries[0].tx, STANDARD_CHECKDATASIG_VERIFY_FLAGS);
+    pblocktemplate->entries[0].txSigOps = GetSigOpCountWithoutP2SH(
+        *pblocktemplate->entries[0].tx, STANDARD_SCRIPT_VERIFY_FLAGS);
 
     // Copy all the transactions into the block
     // FIXME: This should be removed as it is significant overhead.
@@ -354,6 +353,7 @@ BlockAssembler::TestForBlock(CTxMemPool::txiter it) {
 
 void BlockAssembler::AddToBlock(CTxMemPool::txiter iter) {
     pblocktemplate->entries.emplace_back(iter->GetSharedTx(), iter->GetFee(),
+                                         iter->GetTxSize(),
                                          iter->GetSigOpCount());
     nBlockSize += iter->GetTxSize();
     ++nBlockTx;
@@ -392,7 +392,6 @@ int BlockAssembler::UpdatePackagesForAdded(
             if (mit == mapModifiedTx.end()) {
                 CTxMemPoolModifiedEntry modEntry(desc);
                 modEntry.nSizeWithAncestors -= it->GetTxSize();
-                modEntry.nBillableSizeWithAncestors -= it->GetTxBillableSize();
                 modEntry.nModFeesWithAncestors -= it->GetModifiedFee();
                 modEntry.nSigOpCountWithAncestors -= it->GetSigOpCount();
                 mapModifiedTx.insert(modEntry);

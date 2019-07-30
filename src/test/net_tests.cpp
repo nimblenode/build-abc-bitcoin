@@ -2,20 +2,22 @@
 // Copyright (c) 2017-2018 The Bitcoin developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#include "addrman.h"
-#include "chainparams.h"
-#include "clientversion.h"
-#include "config.h"
-#include "hash.h"
-#include "net.h"
-#include "netbase.h"
-#include "serialize.h"
-#include "streams.h"
-#include "test/test_bitcoin.h"
+#include <net.h>
 
-#include <string>
+#include <addrman.h>
+#include <chainparams.h>
+#include <clientversion.h>
+#include <config.h>
+#include <hash.h>
+#include <netbase.h>
+#include <serialize.h>
+#include <streams.h>
+
+#include <test/test_bitcoin.h>
 
 #include <boost/test/unit_test.hpp>
+
+#include <string>
 
 class CAddrManSerializationMock : public CAddrMan {
 public:
@@ -70,7 +72,7 @@ private:
     uint64_t nMaxBlockSize;
 };
 
-CDataStream AddrmanToStream(CAddrManSerializationMock &_addrman) {
+static CDataStream AddrmanToStream(CAddrManSerializationMock &_addrman) {
     CDataStream ssPeersIn(SER_DISK, CLIENT_VERSION);
     ssPeersIn << FLATDATA(Params().DiskMagic());
     ssPeersIn << _addrman;
@@ -80,6 +82,17 @@ CDataStream AddrmanToStream(CAddrManSerializationMock &_addrman) {
 }
 
 BOOST_FIXTURE_TEST_SUITE(net_tests, BasicTestingSetup)
+
+BOOST_AUTO_TEST_CASE(cnode_listen_port) {
+    // test default
+    unsigned short port = GetListenPort();
+    BOOST_CHECK(port == Params().GetDefaultPort());
+    // test set port
+    unsigned short altPort = 12345;
+    gArgs.SoftSetArg("-port", std::to_string(altPort));
+    port = GetListenPort();
+    BOOST_CHECK(port == altPort);
+}
 
 BOOST_AUTO_TEST_CASE(caddrdb_read) {
     CAddrManUncorrupted addrmanUncorrupted;
@@ -166,7 +179,7 @@ BOOST_AUTO_TEST_CASE(cnode_simple_test) {
     ipv4Addr.s_addr = 0xa0b0c001;
 
     CAddress addr = CAddress(CService(ipv4Addr, 7777), NODE_NETWORK);
-    std::string pszDest = "";
+    std::string pszDest;
     bool fInboundIn = false;
 
     // Test that fFeeler is false by default.

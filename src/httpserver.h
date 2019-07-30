@@ -88,7 +88,7 @@ public:
 
     /**
      * Get the request header specified by hdr, or an empty string.
-     * Return an pair (isPresent,string).
+     * Return a pair (isPresent,string).
      */
     std::pair<bool, std::string> GetHeader(const std::string &hdr);
 
@@ -128,7 +128,7 @@ public:
 };
 
 /**
- * Event class. This can be used either as an cross-thread trigger or as a
+ * Event class. This can be used either as a cross-thread trigger or as a
  * timer.
  */
 class HTTPEvent {
@@ -140,7 +140,7 @@ public:
      * handler is the handler to call when the event is triggered.
      */
     HTTPEvent(struct event_base *base, bool deleteWhenTriggered,
-              const std::function<void(void)> &handler);
+              const std::function<void()> &handler);
     ~HTTPEvent();
 
     /**
@@ -150,7 +150,7 @@ public:
     void trigger(struct timeval *tv);
 
     bool deleteWhenTriggered;
-    std::function<void(void)> handler;
+    std::function<void()> handler;
 
 private:
     struct event *ev;

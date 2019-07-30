@@ -3,20 +3,30 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test the wallet."""
+from decimal import Decimal
+import time
+
+from test_framework.messages import FromHex, CTransaction
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import *
-from test_framework.mininode import *
+from test_framework.util import (
+    assert_array_result,
+    assert_equal,
+    assert_fee_amount,
+    assert_raises_rpc_error,
+    connect_nodes_bi,
+    count_bytes,
+    sync_blocks,
+    sync_mempools,
+)
 
 
 class WalletTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 4
         self.setup_clean_chain = True
-        self.extra_args = [
-            ['-usehd={:d}'.format(i % 2 == 0)] for i in range(4)]
 
     def setup_network(self):
-        self.add_nodes(4, self.extra_args)
+        self.add_nodes(4)
         self.start_node(0)
         self.start_node(1)
         self.start_node(2)
@@ -70,7 +80,7 @@ class WalletTest(BitcoinTestFramework):
             txid=confirmed_txid, n=confirmed_index, include_mempool=True)
         assert_equal(txout['value'], 50)
 
-        # Send 21 BTC from 0 to 2 using sendtoaddress call.
+        # Send 21 BCH from 0 to 2 using sendtoaddress call.
         # Locked memory should use at least 32 bytes to sign each transaction
         self.log.info("test getmemoryinfo")
         memory_before = self.nodes[0].getmemoryinfo()
@@ -109,12 +119,20 @@ class WalletTest(BitcoinTestFramework):
         # Exercise locking of unspent outputs
         unspent_0 = self.nodes[2].listunspent()[0]
         unspent_0 = {"txid": unspent_0["txid"], "vout": unspent_0["vout"]}
+        assert_raises_rpc_error(-8, "Invalid parameter, expected locked output",
+                                self.nodes[2].lockunspent, True, [unspent_0])
         self.nodes[2].lockunspent(False, [unspent_0])
+        assert_raises_rpc_error(-8, "Invalid parameter, output already locked",
+                                self.nodes[2].lockunspent, False, [unspent_0])
         assert_raises_rpc_error(-4, "Insufficient funds",
                                 self.nodes[2].sendtoaddress, self.nodes[2].getnewaddress(), 20)
         assert_equal([unspent_0], self.nodes[2].listlockunspent())
         self.nodes[2].lockunspent(True, [unspent_0])
         assert_equal(len(self.nodes[2].listlockunspent()), 0)
+        assert_raises_rpc_error(-8, "Invalid parameter, unknown transaction", self.nodes[2].lockunspent, False, [
+                                {"txid": "0000000000000000000000000000000000", "vout": 0}])
+        assert_raises_rpc_error(-8, "Invalid parameter, vout index out of bounds",
+                                self.nodes[2].lockunspent, False, [{"txid": unspent_0["txid"], "vout": 999}])
 
         # Have node1 generate 100 blocks (so node0 can recover the fee)
         self.nodes[1].generate(100)
@@ -139,7 +157,8 @@ class WalletTest(BitcoinTestFramework):
             inputs.append({"txid": utxo["txid"], "vout": utxo["vout"]})
             outputs[self.nodes[2].getnewaddress("from1")] = utxo["amount"] - 3
             raw_tx = self.nodes[0].createrawtransaction(inputs, outputs)
-            txns_to_send.append(self.nodes[0].signrawtransaction(raw_tx))
+            txns_to_send.append(
+                self.nodes[0].signrawtransactionwithwallet(raw_tx))
 
         # Have node 1 (miner) send the transactions
         self.nodes[1].sendrawtransaction(txns_to_send[0]["hex"], True)
@@ -153,7 +172,13 @@ class WalletTest(BitcoinTestFramework):
         assert_equal(self.nodes[2].getbalance(), 94)
         assert_equal(self.nodes[2].getbalance("from1"), 94 - 21)
 
-        # Send 10 BTC normal
+        # Verify that a spent output cannot be locked anymore
+        spent_0 = {"txid": node0utxos[0]["txid"],
+                   "vout": node0utxos[0]["vout"]}
+        assert_raises_rpc_error(-8, "Invalid parameter, expected unspent output",
+                                self.nodes[0].lockunspent, False, [spent_0])
+
+        # Send 10 BCH normal
         old_balance = self.nodes[2].getbalance()
         address = self.nodes[0].getnewaddress("test")
         fee_per_byte = Decimal('0.001') / 1000
@@ -166,7 +191,7 @@ class WalletTest(BitcoinTestFramework):
                                            fee_per_byte, ctx.billable_size())
         assert_equal(self.nodes[0].getbalance(), Decimal('10'))
 
-        # Send 10 BTC with subtract fee from amount
+        # Send 10 BCH with subtract fee from amount
         txid = self.nodes[2].sendtoaddress(address, 10, "", "", True)
         self.nodes[2].generate(1)
         self.sync_all([self.nodes[0:3]])
@@ -175,7 +200,7 @@ class WalletTest(BitcoinTestFramework):
         node_0_bal = self.check_fee_amount(self.nodes[0].getbalance(), Decimal(
             '20'), fee_per_byte, count_bytes(self.nodes[2].getrawtransaction(txid)))
 
-        # Sendmany 10 BTC
+        # Sendmany 10 BCH
         txid = self.nodes[2].sendmany('from1', {address: 10}, 0, "", [])
         self.nodes[2].generate(1)
         self.sync_all([self.nodes[0:3]])
@@ -185,7 +210,7 @@ class WalletTest(BitcoinTestFramework):
         ), node_2_bal - Decimal('10'), fee_per_byte, ctx.billable_size())
         assert_equal(self.nodes[0].getbalance(), node_0_bal)
 
-        # Sendmany 10 BTC with subtract fee from amount
+        # Sendmany 10 BCH with subtract fee from amount
         txid = self.nodes[2].sendmany('from1', {address: 10}, 0, "", [address])
         self.nodes[2].generate(1)
         self.sync_all([self.nodes[0:3]])
@@ -230,7 +255,7 @@ class WalletTest(BitcoinTestFramework):
         rawTx = self.nodes[1].createrawtransaction(inputs, outputs).replace(
             "c0833842", "00000000")  # replace 11.11 with 0.0 (int32)
         decRawTx = self.nodes[1].decoderawtransaction(rawTx)
-        signedRawTx = self.nodes[1].signrawtransaction(rawTx)
+        signedRawTx = self.nodes[1].signrawtransactionwithwallet(rawTx)
         decRawTx = self.nodes[1].decoderawtransaction(signedRawTx['hex'])
         zeroValueTxid = decRawTx['txid']
         self.nodes[1].sendrawtransaction(signedRawTx['hex'])
@@ -330,7 +355,7 @@ class WalletTest(BitcoinTestFramework):
         self.nodes[1].importaddress(address_to_import)
 
         # 3. Validate that the imported address is watch-only on node1
-        assert(self.nodes[1].validateaddress(address_to_import)["iswatchonly"])
+        assert(self.nodes[1].getaddressinfo(address_to_import)["iswatchonly"])
 
         # 4. Check that the unspents after import are not spendable
         assert_array_result(self.nodes[1].listunspent(),
@@ -418,7 +443,7 @@ class WalletTest(BitcoinTestFramework):
         # Split into two chains
         rawtx = self.nodes[0].createrawtransaction([{"txid": singletxid, "vout": 0}], {
                                                    chain_addrs[0]: node0_balance / 2 - Decimal('0.01'), chain_addrs[1]: node0_balance / 2 - Decimal('0.01')})
-        signedtx = self.nodes[0].signrawtransaction(rawtx)
+        signedtx = self.nodes[0].signrawtransactionwithwallet(rawtx)
         singletxid = self.nodes[0].sendrawtransaction(signedtx["hex"])
         self.nodes[0].generate(1)
 
@@ -465,6 +490,19 @@ class WalletTest(BitcoinTestFramework):
         # Verify nothing new in wallet
         assert_equal(total_txs, len(
             self.nodes[0].listtransactions("*", 99999)))
+
+        # Test getaddressinfo. Note that these addresses are taken from disablewallet.py
+        assert_raises_rpc_error(-5, "Invalid address",
+                                self.nodes[0].getaddressinfo, "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy")
+        address_info = self.nodes[0].getaddressinfo(
+            "mneYUmWYsuk7kySiURxCi3AGxrAqZxLgPZ")
+        assert_equal(address_info['address'],
+                     "bchreg:qp8rs4qyd3aazk22eyzwg7fmdfzmxm02pywavdajx4")
+        assert_equal(address_info["scriptPubKey"],
+                     "76a9144e3854046c7bd1594ac904e4793b6a45b36dea0988ac")
+        assert not address_info["ismine"]
+        assert not address_info["iswatchonly"]
+        assert not address_info["isscript"]
 
 
 if __name__ == '__main__':

@@ -3,24 +3,25 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "ismine.h"
+#include <script/ismine.h>
 
-#include "key.h"
-#include "keystore.h"
-#include "script/script.h"
-#include "script/sign.h"
-#include "script/standard.h"
+#include <key.h>
+#include <keystore.h>
+#include <script/script.h>
+#include <script/sign.h>
+#include <script/standard.h>
 
 typedef std::vector<uint8_t> valtype;
 
-unsigned int HaveKeys(const std::vector<valtype> &pubkeys,
-                      const CKeyStore &keystore) {
-    unsigned int nResult = 0;
+static bool HaveKeys(const std::vector<valtype> &pubkeys,
+                     const CKeyStore &keystore) {
     for (const valtype &pubkey : pubkeys) {
         CKeyID keyID = CPubKey(pubkey).GetID();
-        if (keystore.HaveKey(keyID)) ++nResult;
+        if (!keystore.HaveKey(keyID)) {
+            return false;
+        }
     }
-    return nResult;
+    return true;
 }
 
 isminetype IsMine(const CKeyStore &keystore, const CScript &scriptPubKey) {
@@ -41,6 +42,8 @@ isminetype IsMine(const CKeyStore &keystore, const CTxDestination &dest,
 
 isminetype IsMine(const CKeyStore &keystore, const CScript &scriptPubKey,
                   bool &isInvalid) {
+    isInvalid = false;
+
     std::vector<valtype> vSolutions;
     txnouttype whichType;
     if (!Solver(scriptPubKey, whichType, vSolutions)) {
@@ -82,8 +85,9 @@ isminetype IsMine(const CKeyStore &keystore, const CScript &scriptPubKey,
             std::vector<valtype> keys(vSolutions.begin() + 1,
                                       vSolutions.begin() + vSolutions.size() -
                                           1);
-            if (HaveKeys(keys, keystore) == keys.size())
+            if (HaveKeys(keys, keystore)) {
                 return ISMINE_SPENDABLE;
+            }
             break;
         }
     }

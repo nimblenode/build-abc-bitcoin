@@ -2,8 +2,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "trafficgraphwidget.h"
-#include "clientmodel.h"
+#include <qt/trafficgraphwidget.h>
+
+#include <interfaces/node.h>
+#include <qt/clientmodel.h>
 
 #include <QColor>
 #include <QPainter>
@@ -26,8 +28,8 @@ TrafficGraphWidget::TrafficGraphWidget(QWidget *parent)
 void TrafficGraphWidget::setClientModel(ClientModel *model) {
     clientModel = model;
     if (model) {
-        nLastBytesIn = model->getTotalBytesRecv();
-        nLastBytesOut = model->getTotalBytesSent();
+        nLastBytesIn = model->node().getTotalBytesRecv();
+        nLastBytesOut = model->node().getTotalBytesSent();
     }
 }
 
@@ -36,13 +38,14 @@ int TrafficGraphWidget::getGraphRangeMins() const {
 }
 
 void TrafficGraphWidget::paintPath(QPainterPath &path, QQueue<float> &samples) {
-    int h = height() - YMARGIN * 2, w = width() - XMARGIN * 2;
-    int sampleCount = samples.size(), x = XMARGIN + w, y;
+    int sampleCount = samples.size();
     if (sampleCount > 0) {
+        int h = height() - YMARGIN * 2, w = width() - XMARGIN * 2;
+        int x = XMARGIN + w;
         path.moveTo(x, YMARGIN + h);
         for (int i = 0; i < sampleCount; ++i) {
             x = XMARGIN + w - w * i / DESIRED_SAMPLES;
-            y = YMARGIN + h - (int)(h * samples.at(i) / fMax);
+            int y = YMARGIN + h - (int)(h * samples.at(i) / fMax);
             path.lineTo(x, y);
         }
         path.lineTo(x, YMARGIN + h);
@@ -111,8 +114,8 @@ void TrafficGraphWidget::paintEvent(QPaintEvent *) {
 void TrafficGraphWidget::updateRates() {
     if (!clientModel) return;
 
-    quint64 bytesIn = clientModel->getTotalBytesRecv(),
-            bytesOut = clientModel->getTotalBytesSent();
+    quint64 bytesIn = clientModel->node().getTotalBytesRecv(),
+            bytesOut = clientModel->node().getTotalBytesSent();
     float inRate =
         (bytesIn - nLastBytesIn) / 1024.0f * 1000 / timer->interval();
     float outRate =
@@ -157,8 +160,8 @@ void TrafficGraphWidget::clear() {
     fMax = 0.0f;
 
     if (clientModel) {
-        nLastBytesIn = clientModel->getTotalBytesRecv();
-        nLastBytesOut = clientModel->getTotalBytesSent();
+        nLastBytesIn = clientModel->node().getTotalBytesRecv();
+        nLastBytesOut = clientModel->node().getTotalBytesSent();
     }
     timer->start();
 }

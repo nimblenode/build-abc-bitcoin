@@ -3,11 +3,11 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "script.h"
+#include <script/script.h>
 
-#include "script/script_flags.h"
-#include "tinyformat.h"
-#include "utilstrencodings.h"
+#include <script/script_flags.h>
+#include <tinyformat.h>
+#include <utilstrencodings.h>
 
 #include <algorithm>
 
@@ -361,7 +361,7 @@ uint32_t CScript::GetSigOpCount(uint32_t flags, bool fAccurate) const {
 
             case OP_CHECKDATASIG:
             case OP_CHECKDATASIGVERIFY:
-                if (flags & SCRIPT_ENABLE_CHECKDATASIG) {
+                if (flags & SCRIPT_VERIFY_CHECKDATASIG_SIGOPS) {
                     n++;
                 }
                 break;

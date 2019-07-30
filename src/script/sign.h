@@ -6,8 +6,8 @@
 #ifndef BITCOIN_SCRIPT_SIGN_H
 #define BITCOIN_SCRIPT_SIGN_H
 
-#include "script/interpreter.h"
-#include "script/sighashtype.h"
+#include <script/interpreter.h>
+#include <script/sighashtype.h>
 
 class CKeyID;
 class CKeyStore;
@@ -105,5 +105,6 @@ SignatureData DataFromTransaction(const CMutableTransaction &tx,
                                   unsigned int nIn);
 void UpdateTransaction(CMutableTransaction &tx, unsigned int nIn,
                        const SignatureData &data);
+void UpdateInput(CTxIn &input, const SignatureData &data);
 
 #endif // BITCOIN_SCRIPT_SIGN_H

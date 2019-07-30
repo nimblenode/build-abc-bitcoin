@@ -1,4 +1,9 @@
-#include "fs.h"
+// Copyright (c) 2017 The Bitcoin Core developers
+// Copyright (c) 2019 The Bitcoin developers
+// Distributed under the MIT software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
+#include <fs.h>
 
 namespace fsbridge {
 
@@ -10,4 +15,4 @@ FILE *freopen(const fs::path &p, const char *mode, FILE *stream) {
     return ::freopen(p.string().c_str(), mode, stream);
 }
 
-} // fsbridge
+} // namespace fsbridge

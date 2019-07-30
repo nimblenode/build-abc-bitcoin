@@ -30,13 +30,14 @@ function(gen_json_header NAME)
 endfunction()
 
 gen_json_header(JSON_HEADERS
-	data/script_tests.json
-	data/base58_keys_valid.json
 	data/base58_encode_decode.json
-	data/base58_keys_invalid.json
+	data/blockfilters.json
+	data/key_io_valid.json
+	data/key_io_invalid.json
+	data/script_tests.json
+	data/sighash.json
 	data/tx_invalid.json
 	data/tx_valid.json
-	data/sighash.json
 )
 
 include(TestSuite)
@@ -54,8 +55,11 @@ add_test_to_suite(bitcoin test_bitcoin
 	base58_tests.cpp
 	base64_tests.cpp
 	bip32_tests.cpp
+	bitmanip_tests.cpp
+	blockchain_tests.cpp
 	blockcheck_tests.cpp
 	blockencodings_tests.cpp
+	blockfilter_tests.cpp
 	blockindex_tests.cpp
 	blockstatus_tests.cpp
 	bloom_tests.cpp
@@ -72,15 +76,17 @@ add_test_to_suite(bitcoin test_bitcoin
 	crypto_tests.cpp
 	cuckoocache_tests.cpp
 	dbwrapper_tests.cpp
-	DoS_tests.cpp
+	denialofservice_tests.cpp
 	dstencode_tests.cpp
 	excessiveblock_tests.cpp
 	feerate_tests.cpp
 	finalization_tests.cpp
+	flatfile_tests.cpp
 	getarg_tests.cpp
 	hash_tests.cpp
 	inv_tests.cpp
 	jsonutil.cpp
+	key_io_tests.cpp
 	key_tests.cpp
 	lcg_tests.cpp
 	limitedmap_tests.cpp
@@ -107,8 +113,10 @@ add_test_to_suite(bitcoin test_bitcoin
 	sanity_tests.cpp
 	scheduler_tests.cpp
 	schnorr_tests.cpp
+	script_bitfield_tests.cpp
 	script_commitment_tests.cpp
-	script_P2SH_tests.cpp
+	script_p2sh_tests.cpp
+	script_standard_tests.cpp
 	script_tests.cpp
 	scriptflags.cpp
 	scriptnum_tests.cpp
@@ -125,13 +133,15 @@ add_test_to_suite(bitcoin test_bitcoin
 	test_bitcoin.cpp
 	test_bitcoin_main.cpp
 	timedata_tests.cpp
+	torcontrol_tests.cpp
 	transaction_tests.cpp
+	txindex_tests.cpp
+	txvalidation_tests.cpp
 	txvalidationcache_tests.cpp
-	versionbits_tests.cpp
 	uint256_tests.cpp
 	undo_tests.cpp
-	univalue_tests.cpp
 	util_tests.cpp
+	validation_block_tests.cpp
 	validation_tests.cpp
 	work_comparator_tests.cpp
 
@@ -140,12 +150,6 @@ add_test_to_suite(bitcoin test_bitcoin
 
 	# Tests generated from JSON
 	${JSON_HEADERS}
-)
-
-target_include_directories(test_bitcoin
-	PUBLIC
-		# To access the generated json headers.
-		${CMAKE_CURRENT_BINARY_DIR}
 )
 
 find_package(Boost 1.58 REQUIRED unit_test_framework)
@@ -172,5 +176,6 @@ if(BUILD_BITCOIN_WALLET)
 			../wallet/test/wallet_tests.cpp
 			../wallet/test/walletdb_tests.cpp
 			../wallet/test/wallet_crypto_tests.cpp
+			../wallet/test/coinselector_tests.cpp
 	)
 endif()

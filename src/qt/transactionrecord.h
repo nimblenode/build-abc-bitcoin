@@ -5,14 +5,18 @@
 #ifndef BITCOIN_QT_TRANSACTIONRECORD_H
 #define BITCOIN_QT_TRANSACTIONRECORD_H
 
-#include "amount.h"
-#include "primitives/txid.h"
+#include <amount.h>
+#include <primitives/txid.h>
 
 #include <QList>
 #include <QString>
 
-class CWallet;
-class CWalletTx;
+namespace interfaces {
+class Node;
+class Wallet;
+struct WalletTx;
+struct WalletTxStatus;
+} // namespace interfaces
 
 /**
  * UI model for transaction status. The transaction status is the part of a
@@ -21,8 +25,8 @@ class CWalletTx;
 class TransactionStatus {
 public:
     TransactionStatus()
-        : countsForBalance(false), sortKey(""), matures_in(0), status(Offline),
-          depth(0), open_for(0), cur_num_blocks(-1) {}
+        : countsForBalance(false), sortKey(""), matures_in(0),
+          status(Unconfirmed), depth(0), open_for(0), cur_num_blocks(-1) {}
 
     enum Status {
         /**< Have 6 or more confirmations (normal tx) or fully mature (mined tx)
@@ -33,8 +37,6 @@ public:
         OpenUntilDate,
         /**< Transaction not yet final, waiting for block */
         OpenUntilBlock,
-        /**< Not sent to any other nodes **/
-        Offline,
         /**< Not yet mined into a block **/
         Unconfirmed,
         /**< Confirmed, but waiting for the recommended number of confirmations
@@ -47,9 +49,6 @@ public:
         /// Generated (mined) transactions
         /**< Mined but waiting for maturity */
         Immature,
-        /**< Transaction will likely not mature because no nodes have confirmed
-         */
-        MaturesWarning,
         /**< Mined but not accepted */
         NotAccepted
     };
@@ -114,9 +113,9 @@ public:
 
     /** Decompose CWallet transaction to model transaction records.
      */
-    static bool showTransaction(const CWalletTx &wtx);
-    static QList<TransactionRecord> decomposeTransaction(const CWallet *wallet,
-                                                         const CWalletTx &wtx);
+    static bool showTransaction();
+    static QList<TransactionRecord>
+    decomposeTransaction(const interfaces::WalletTx &wtx);
 
     /** @name Immutable transaction attributes
       @{*/
@@ -145,11 +144,12 @@ public:
 
     /** Update status from core wallet tx.
      */
-    void updateStatus(const CWalletTx &wtx);
+    void updateStatus(const interfaces::WalletTxStatus &wtx, int numBlocks,
+                      int64_t block_time);
 
     /** Return whether a status update is needed.
      */
-    bool statusUpdateNeeded() const;
+    bool statusUpdateNeeded(int numBlocks) const;
 };
 
 #endif // BITCOIN_QT_TRANSACTIONRECORD_H

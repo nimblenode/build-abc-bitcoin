@@ -4,17 +4,17 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "pow.h"
+#include <pow.h>
 
-#include "arith_uint256.h"
-#include "chain.h"
-#include "chainparams.h"
-#include "config.h"
-#include "consensus/activation.h"
-#include "consensus/params.h"
-#include "primitives/block.h"
-#include "uint256.h"
-#include "util.h"
+#include <arith_uint256.h>
+#include <chain.h>
+#include <chainparams.h>
+#include <config.h>
+#include <consensus/activation.h>
+#include <consensus/params.h>
+#include <primitives/block.h>
+#include <uint256.h>
+#include <util.h>
 
 /**
  * Compute the next required proof of work using the legacy Bitcoin difficulty
@@ -96,10 +96,8 @@ uint32_t GetNextWorkRequired(const CBlockIndex *pindexPrev,
                              const CBlockHeader *pblock, const Config &config) {
     const Consensus::Params &params = config.GetChainParams().GetConsensus();
 
-    // Genesis block
-    if (pindexPrev == nullptr) {
-        return UintToArith256(params.powLimit).GetCompact();
-    }
+    // GetNextWorkRequired should never be called on the genesis block
+    assert(pindexPrev != nullptr);
 
     // Special rule for regtest: we never retarget.
     if (params.fPowNoRetargeting) {

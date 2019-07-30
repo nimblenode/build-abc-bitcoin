@@ -4,10 +4,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "sigencoding.h"
+#include <script/sigencoding.h>
 
-#include "pubkey.h"
-#include "script_flags.h"
+#include <pubkey.h>
+#include <script/script_flags.h>
 
 #include <boost/range/adaptor/sliced.hpp>
 
@@ -153,32 +153,44 @@ static bool IsValidDERSignatureEncoding(const slicedvaltype &sig) {
     return true;
 }
 
+static bool IsSchnorrSig(const slicedvaltype &sig) {
+    return sig.size() == 64;
+}
+
 static bool CheckRawECDSASignatureEncoding(const slicedvaltype &sig,
                                            uint32_t flags,
                                            ScriptError *serror) {
-    if ((flags & SCRIPT_ENABLE_SCHNORR) && (sig.size() == 64)) {
-        // In an ECDSA-only context, 64-byte signatures are banned when
-        // Schnorr flag set.
-        return set_error(serror, SCRIPT_ERR_SIG_BADLENGTH);
+    if (IsSchnorrSig(sig)) {
+        // In an ECDSA-only context, 64-byte signatures are forbidden.
+        return set_error(serror, ScriptError::SIG_BADLENGTH);
     }
     if ((flags & (SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_LOW_S |
                   SCRIPT_VERIFY_STRICTENC)) &&
         !IsValidDERSignatureEncoding(sig)) {
-        return set_error(serror, SCRIPT_ERR_SIG_DER);
+        return set_error(serror, ScriptError::SIG_DER);
     }
 
     if ((flags & SCRIPT_VERIFY_LOW_S) && !CPubKey::CheckLowS(sig)) {
-        return set_error(serror, SCRIPT_ERR_SIG_HIGH_S);
+        return set_error(serror, ScriptError::SIG_HIGH_S);
     }
 
     return true;
 }
 
+static bool CheckRawSchnorrSignatureEncoding(const slicedvaltype &sig,
+                                             uint32_t flags,
+                                             ScriptError *serror) {
+    if (IsSchnorrSig(sig)) {
+        return true;
+    }
+    return set_error(serror, ScriptError::SIG_NONSCHNORR);
+}
+
 static bool CheckRawSignatureEncoding(const slicedvaltype &sig, uint32_t flags,
                                       ScriptError *serror) {
-    if ((flags & SCRIPT_ENABLE_SCHNORR) && (sig.size() == 64)) {
+    if (IsSchnorrSig(sig)) {
         // In a generic-signature context, 64-byte signatures are interpreted
-        // as Schnorr signatures (always correctly encoded) when flag set.
+        // as Schnorr signatures (always correctly encoded).
         return true;
     }
     return CheckRawECDSASignatureEncoding(sig, flags, serror);
@@ -200,17 +212,17 @@ static bool CheckSighashEncoding(const valtype &vchSig, uint32_t flags,
                                  ScriptError *serror) {
     if (flags & SCRIPT_VERIFY_STRICTENC) {
         if (!GetHashType(vchSig).isDefined()) {
-            return set_error(serror, SCRIPT_ERR_SIG_HASHTYPE);
+            return set_error(serror, ScriptError::SIG_HASHTYPE);
         }
 
         bool usesForkId = GetHashType(vchSig).hasForkId();
         bool forkIdEnabled = flags & SCRIPT_ENABLE_SIGHASH_FORKID;
         if (!forkIdEnabled && usesForkId) {
-            return set_error(serror, SCRIPT_ERR_ILLEGAL_FORKID);
+            return set_error(serror, ScriptError::ILLEGAL_FORKID);
         }
 
         if (forkIdEnabled && !usesForkId) {
-            return set_error(serror, SCRIPT_ERR_MUST_USE_FORKID);
+            return set_error(serror, ScriptError::MUST_USE_FORKID);
         }
     }
 
@@ -259,6 +271,18 @@ bool CheckTransactionECDSASignatureEncoding(const valtype &vchSig,
         });
 }
 
+bool CheckTransactionSchnorrSignatureEncoding(const valtype &vchSig,
+                                              uint32_t flags,
+                                              ScriptError *serror) {
+    return CheckTransactionSignatureEncodingImpl(
+        vchSig, flags, serror,
+        [](const slicedvaltype &templateSig, uint32_t templateFlags,
+           ScriptError *templateSerror) {
+            return CheckRawSchnorrSignatureEncoding(templateSig, templateFlags,
+                                                    templateSerror);
+        });
+}
+
 static bool IsCompressedOrUncompressedPubKey(const valtype &vchPubKey) {
     switch (vchPubKey.size()) {
         case 33:
@@ -291,13 +315,13 @@ bool CheckPubKeyEncoding(const valtype &vchPubKey, uint32_t flags,
                          ScriptError *serror) {
     if ((flags & SCRIPT_VERIFY_STRICTENC) &&
         !IsCompressedOrUncompressedPubKey(vchPubKey)) {
-        return set_error(serror, SCRIPT_ERR_PUBKEYTYPE);
+        return set_error(serror, ScriptError::PUBKEYTYPE);
     }
     // Only compressed keys are accepted when
     // SCRIPT_VERIFY_COMPRESSED_PUBKEYTYPE is enabled.
     if ((flags & SCRIPT_VERIFY_COMPRESSED_PUBKEYTYPE) &&
         !IsCompressedPubKey(vchPubKey)) {
-        return set_error(serror, SCRIPT_ERR_NONCOMPRESSED_PUBKEY);
+        return set_error(serror, ScriptError::NONCOMPRESSED_PUBKEY);
     }
     return true;
 }

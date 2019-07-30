@@ -4,17 +4,23 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #if defined(HAVE_CONFIG_H)
-#include "config/bitcoin-config.h"
+#include <config/bitcoin-config.h>
 #endif
 
-#include "util.h"
+#include <util.h>
 
-#include "chainparamsbase.h"
-#include "fs.h"
-#include "random.h"
-#include "serialize.h"
-#include "utilstrencodings.h"
-#include "utiltime.h"
+#include <chainparamsbase.h>
+#include <fs.h>
+#include <random.h>
+#include <serialize.h>
+#include <utilstrencodings.h>
+#include <utiltime.h>
+
+#include <boost/interprocess/sync/file_lock.hpp>
+#include <boost/thread.hpp>
+
+#include <openssl/conf.h>
+#include <openssl/rand.h>
 
 #include <cstdarg>
 
@@ -63,6 +69,7 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include <codecvt>
 
 #include <io.h> /* for _commit */
 #include <shlobj.h>
@@ -76,12 +83,6 @@
 #include <malloc.h>
 #endif
 
-#include <boost/program_options/detail/config_file.hpp>
-#include <boost/thread.hpp>
-
-#include <openssl/conf.h>
-#include <openssl/rand.h>
-
 // Application startup time (used for uptime calculation)
 const int64_t nStartupTime = GetTime();
 
@@ -93,26 +94,22 @@ ArgsManager gArgs;
 CTranslationInterface translationInterface;
 
 /** Init OpenSSL library multithreading support */
-static CCriticalSection **ppmutexOpenSSL;
+static std::unique_ptr<CCriticalSection[]> ppmutexOpenSSL;
 void locking_callback(int mode, int i, const char *file,
                       int line) NO_THREAD_SAFETY_ANALYSIS {
     if (mode & CRYPTO_LOCK) {
-        ENTER_CRITICAL_SECTION(*ppmutexOpenSSL[i]);
+        ENTER_CRITICAL_SECTION(ppmutexOpenSSL[i]);
     } else {
-        LEAVE_CRITICAL_SECTION(*ppmutexOpenSSL[i]);
+        LEAVE_CRITICAL_SECTION(ppmutexOpenSSL[i]);
     }
 }
 
-// Init
+// Singleton for wrapping OpenSSL setup/teardown.
 class CInit {
 public:
     CInit() {
         // Init OpenSSL library multithreading support.
-        ppmutexOpenSSL = (CCriticalSection **)OPENSSL_malloc(
-            CRYPTO_num_locks() * sizeof(CCriticalSection *));
-        for (int i = 0; i < CRYPTO_num_locks(); i++) {
-            ppmutexOpenSSL[i] = new CCriticalSection();
-        }
+        ppmutexOpenSSL.reset(new CCriticalSection[CRYPTO_num_locks()]);
         CRYPTO_set_locking_callback(locking_callback);
 
         // OpenSSL can optionally load a config file which lists optional
@@ -137,12 +134,81 @@ public:
         RAND_cleanup();
         // Shutdown OpenSSL library multithreading support.
         CRYPTO_set_locking_callback(nullptr);
-        for (int i = 0; i < CRYPTO_num_locks(); i++) {
-            delete ppmutexOpenSSL[i];
-        }
-        OPENSSL_free(ppmutexOpenSSL);
+        // Clear the set of locks now to maintain symmetry with the constructor.
+        ppmutexOpenSSL.reset();
     }
 } instance_of_cinit;
+
+/**
+ * A map that contains all the currently held directory locks. After successful
+ * locking, these will be held here until the global destructor cleans them up
+ * and thus automatically unlocks them, or ReleaseDirectoryLocks is called.
+ */
+static std::map<std::string, std::unique_ptr<boost::interprocess::file_lock>>
+    dir_locks;
+/** Mutex to protect dir_locks. */
+static std::mutex cs_dir_locks;
+
+bool LockDirectory(const fs::path &directory, const std::string lockfile_name,
+                   bool probe_only) {
+    std::lock_guard<std::mutex> ulock(cs_dir_locks);
+    fs::path pathLockFile = directory / lockfile_name;
+
+    // If a lock for this directory already exists in the map, don't try to
+    // re-lock it
+    if (dir_locks.count(pathLockFile.string())) {
+        return true;
+    }
+
+    // Create empty lock file if it doesn't exist.
+    FILE *file = fsbridge::fopen(pathLockFile, "a");
+    if (file) {
+        fclose(file);
+    }
+
+    try {
+        auto lock = std::make_unique<boost::interprocess::file_lock>(
+            pathLockFile.string().c_str());
+        if (!lock->try_lock()) {
+            return false;
+        }
+        if (!probe_only) {
+            // Lock successful and we're not just probing, put it into the map
+            dir_locks.emplace(pathLockFile.string(), std::move(lock));
+        }
+    } catch (const boost::interprocess::interprocess_exception &e) {
+        return error("Error while attempting to lock directory %s: %s",
+                     directory.string(), e.what());
+    }
+    return true;
+}
+
+void ReleaseDirectoryLocks() {
+    std::lock_guard<std::mutex> ulock(cs_dir_locks);
+    dir_locks.clear();
+}
+
+bool DirIsWritable(const fs::path &directory) {
+    fs::path tmpFile = directory / fs::unique_path();
+
+    FILE *file = fsbridge::fopen(tmpFile, "a");
+    if (!file) {
+        return false;
+    }
+
+    fclose(file);
+    remove(tmpFile);
+
+    return true;
+}
+
+bool CheckDiskSpace(const fs::path &dir, uint64_t nAdditionalBytes) {
+    // 50 MiB
+    constexpr uint64_t nMinDiskSpace = 52428800;
+
+    uint64_t nFreeBytesAvailable = fs::space(dir).available;
+    return nFreeBytesAvailable >= nMinDiskSpace + nAdditionalBytes;
+}
 
 /**
  * Interpret a string argument as a boolean.
@@ -377,7 +443,8 @@ void ArgsManager::SelectConfigNetwork(const std::string &network) {
     m_network = network;
 }
 
-void ArgsManager::ParseParameters(int argc, const char *const argv[]) {
+bool ArgsManager::ParseParameters(int argc, const char *const argv[],
+                                  std::string &error) {
     LOCK(cs_args);
     m_override_args.clear();
 
@@ -411,7 +478,48 @@ void ArgsManager::ParseParameters(int argc, const char *const argv[]) {
         } else {
             m_override_args[key].push_back(val);
         }
+
+        // Check that the arg is known
+        if (!(IsSwitchChar(key[0]) && key.size() == 1)) {
+            if (!IsArgKnown(key, error)) {
+                error = strprintf("Invalid parameter %s", key.c_str());
+                return false;
+            }
+        }
     }
+
+    // we do not allow -includeconf from command line, so we clear it here
+    auto it = m_override_args.find("-includeconf");
+    if (it != m_override_args.end()) {
+        if (it->second.size() > 0) {
+            for (const auto &ic : it->second) {
+                fprintf(stderr,
+                        "warning: -includeconf cannot be used from "
+                        "commandline; ignoring -includeconf=%s\n",
+                        ic.c_str());
+            }
+            m_override_args.erase(it);
+        }
+    }
+    return true;
+}
+
+bool ArgsManager::IsArgKnown(const std::string &key, std::string &error) {
+    size_t option_index = key.find('.');
+    std::string arg_no_net;
+    if (option_index == std::string::npos) {
+        arg_no_net = key;
+    } else {
+        arg_no_net =
+            std::string("-") + key.substr(option_index + 1, std::string::npos);
+    }
+
+    for (const auto &arg_map : m_available_args) {
+        if (arg_map.second.count(arg_no_net)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 std::vector<std::string> ArgsManager::GetArgs(const std::string &strArg) const {
@@ -541,10 +649,98 @@ void ArgsManager::ForceSetMultiArg(const std::string &strArg,
     m_override_args[strArg].push_back(strValue);
 }
 
+void ArgsManager::AddArg(const std::string &name, const std::string &help,
+                         const bool debug_only, const OptionsCategory &cat) {
+    // Split arg name from its help param
+    size_t eq_index = name.find('=');
+    if (eq_index == std::string::npos) {
+        eq_index = name.size();
+    }
+
+    std::map<std::string, Arg> &arg_map = m_available_args[cat];
+    auto ret = arg_map.emplace(
+        name.substr(0, eq_index),
+        Arg(name.substr(eq_index, name.size() - eq_index), help, debug_only));
+    // Make sure an insertion actually happened.
+    assert(ret.second);
+}
+
 void ArgsManager::ClearArg(const std::string &strArg) {
     LOCK(cs_args);
     m_override_args.erase(strArg);
     m_config_args.erase(strArg);
+}
+
+std::string ArgsManager::GetHelpMessage() {
+    const bool show_debug = gArgs.GetBoolArg("-help-debug", false);
+
+    std::string usage = "";
+    for (const auto &arg_map : m_available_args) {
+        switch (arg_map.first) {
+            case OptionsCategory::OPTIONS:
+                usage += HelpMessageGroup("Options:");
+                break;
+            case OptionsCategory::CONNECTION:
+                usage += HelpMessageGroup("Connection options:");
+                break;
+            case OptionsCategory::ZMQ:
+                usage += HelpMessageGroup("ZeroMQ notification options:");
+                break;
+            case OptionsCategory::DEBUG_TEST:
+                usage += HelpMessageGroup("Debugging/Testing options:");
+                break;
+            case OptionsCategory::NODE_RELAY:
+                usage += HelpMessageGroup("Node relay options:");
+                break;
+            case OptionsCategory::BLOCK_CREATION:
+                usage += HelpMessageGroup("Block creation options:");
+                break;
+            case OptionsCategory::RPC:
+                usage += HelpMessageGroup("RPC server options:");
+                break;
+            case OptionsCategory::WALLET:
+                usage += HelpMessageGroup("Wallet options:");
+                break;
+            case OptionsCategory::WALLET_DEBUG_TEST:
+                if (show_debug) {
+                    usage +=
+                        HelpMessageGroup("Wallet debugging/testing options:");
+                }
+                break;
+            case OptionsCategory::CHAINPARAMS:
+                usage += HelpMessageGroup("Chain selection options:");
+                break;
+            case OptionsCategory::GUI:
+                usage += HelpMessageGroup("UI Options:");
+                break;
+            case OptionsCategory::COMMANDS:
+                usage += HelpMessageGroup("Commands:");
+                break;
+            case OptionsCategory::REGISTER_COMMANDS:
+                usage += HelpMessageGroup("Register Commands:");
+                break;
+            default:
+                break;
+        }
+
+        // When we get to the hidden options, stop
+        if (arg_map.first == OptionsCategory::HIDDEN) {
+            break;
+        }
+
+        for (const auto &arg : arg_map.second) {
+            if (show_debug || !arg.second.m_debug_only) {
+                std::string name;
+                if (arg.second.m_help_param.empty()) {
+                    name = arg.first;
+                } else {
+                    name = arg.first + arg.second.m_help_param;
+                }
+                usage += HelpMessageOpt(name, arg.second.m_help_text);
+            }
+        }
+    }
+    return usage;
 }
 
 bool HelpRequested(const ArgsManager &args) {
@@ -617,9 +813,38 @@ fs::path GetDefaultDataDir() {
 #endif
 }
 
+static fs::path g_blocks_path_cache_net_specific;
 static fs::path pathCached;
 static fs::path pathCachedNetSpecific;
 static CCriticalSection csPathCached;
+
+const fs::path &GetBlocksDir() {
+
+    LOCK(csPathCached);
+
+    fs::path &path = g_blocks_path_cache_net_specific;
+
+    // This can be called during exceptions by LogPrintf(), so we cache the
+    // value so we don't have to do memory allocations after that.
+    if (!path.empty()) {
+        return path;
+    }
+
+    if (gArgs.IsArgSet("-blocksdir")) {
+        path = fs::system_complete(gArgs.GetArg("-blocksdir", ""));
+        if (!fs::is_directory(path)) {
+            path = "";
+            return path;
+        }
+    } else {
+        path = GetDataDir(false);
+    }
+
+    path /= BaseParams().DataDir();
+    path /= "blocks";
+    fs::create_directories(path);
+    return path;
+}
 
 const fs::path &GetDataDir(bool fNetSpecific) {
     LOCK(csPathCached);
@@ -648,6 +873,12 @@ const fs::path &GetDataDir(bool fNetSpecific) {
 
     if (fs::create_directories(path)) {
         // This is the first run, create wallets subdirectory too
+        //
+        // TODO: this is an ugly way to create the wallets/ directory and
+        // really shouldn't be done here. Once this is fixed, please
+        // also remove the corresponding line in bitcoind.cpp AppInit.
+        // See more info at:
+        // https://reviews.bitcoinabc.org/D3312
         fs::create_directories(path / "wallets");
     }
 
@@ -659,6 +890,7 @@ void ClearDatadirCache() {
 
     pathCached = fs::path();
     pathCachedNetSpecific = fs::path();
+    g_blocks_path_cache_net_specific = fs::path();
 }
 
 fs::path GetConfigFile(const std::string &confPath) {
@@ -670,46 +902,126 @@ fs::path GetConfigFile(const std::string &confPath) {
     return pathConfigFile;
 }
 
-void ArgsManager::ReadConfigStream(std::istream &stream) {
+static std::string TrimString(const std::string &str,
+                              const std::string &pattern) {
+    std::string::size_type front = str.find_first_not_of(pattern);
+    if (front == std::string::npos) {
+        return std::string();
+    }
+    std::string::size_type end = str.find_last_not_of(pattern);
+    return str.substr(front, end - front + 1);
+}
+
+static std::vector<std::pair<std::string, std::string>>
+GetConfigOptions(std::istream &stream) {
+    std::vector<std::pair<std::string, std::string>> options;
+    std::string str, prefix;
+    std::string::size_type pos;
+    while (std::getline(stream, str)) {
+        if ((pos = str.find('#')) != std::string::npos) {
+            str = str.substr(0, pos);
+        }
+        const static std::string pattern = " \t\r\n";
+        str = TrimString(str, pattern);
+        if (!str.empty()) {
+            if (*str.begin() == '[' && *str.rbegin() == ']') {
+                prefix = str.substr(1, str.size() - 2) + '.';
+            } else if ((pos = str.find('=')) != std::string::npos) {
+                std::string name =
+                    prefix + TrimString(str.substr(0, pos), pattern);
+                std::string value = TrimString(str.substr(pos + 1), pattern);
+                options.emplace_back(name, value);
+            }
+        }
+    }
+    return options;
+}
+
+bool ArgsManager::ReadConfigStream(std::istream &stream, std::string &error,
+                                   bool ignore_invalid_keys) {
     LOCK(cs_args);
 
-    std::set<std::string> setOptions;
-    setOptions.insert("*");
+    for (const std::pair<std::string, std::string> &option :
+         GetConfigOptions(stream)) {
+        std::string strKey = std::string("-") + option.first;
+        std::string strValue = option.second;
 
-    for (boost::program_options::detail::config_file_iterator
-             it(stream, setOptions),
-         end;
-         it != end; ++it) {
-        std::string strKey = std::string("-") + it->string_key;
-        std::string strValue = it->value[0];
         if (InterpretNegatedOption(strKey, strValue)) {
             m_config_args[strKey].clear();
         } else {
             m_config_args[strKey].push_back(strValue);
         }
+
+        // Check that the arg is known
+        if (!IsArgKnown(strKey, error) && !ignore_invalid_keys) {
+            error = strprintf("Invalid configuration value %s",
+                              option.first.c_str());
+            return false;
+        }
     }
+    return true;
 }
 
-void ArgsManager::ReadConfigFile(const std::string &confPath) {
+bool ArgsManager::ReadConfigFiles(std::string &error,
+                                  bool ignore_invalid_keys) {
     {
         LOCK(cs_args);
         m_config_args.clear();
     }
 
+    const std::string confPath = GetArg("-conf", BITCOIN_CONF_FILENAME);
     fs::ifstream stream(GetConfigFile(confPath));
 
     // ok to not have a config file
     if (stream.good()) {
-        ReadConfigStream(stream);
+        if (!ReadConfigStream(stream, error, ignore_invalid_keys)) {
+            return false;
+        }
+        // if there is an -includeconf in the override args, but it is empty,
+        // that means the user passed '-noincludeconf' on the command line, in
+        // which case we should not include anything
+        bool emptyIncludeConf;
+        {
+            LOCK(cs_args);
+            emptyIncludeConf = m_override_args.count("-includeconf") == 0;
+        }
+        if (emptyIncludeConf) {
+            std::vector<std::string> includeconf(GetArgs("-includeconf"));
+            {
+                // We haven't set m_network yet (that happens in
+                // SelectParams()), so manually check for network.includeconf
+                // args.
+                std::vector<std::string> includeconf_net(GetArgs(
+                    std::string("-") + GetChainName() + ".includeconf"));
+                includeconf.insert(includeconf.end(), includeconf_net.begin(),
+                                   includeconf_net.end());
+            }
+
+            for (const std::string &to_include : includeconf) {
+                fs::ifstream include_config(GetConfigFile(to_include));
+                if (include_config.good()) {
+                    if (!ReadConfigStream(include_config, error,
+                                          ignore_invalid_keys)) {
+                        return false;
+                    }
+                    LogPrintf("Included configuration file %s\n",
+                              to_include.c_str());
+                } else {
+                    fprintf(stderr, "Failed to include configuration file %s\n",
+                            to_include.c_str());
+                }
+            }
+        }
     }
 
     // If datadir is changed in .conf file:
     ClearDatadirCache();
     if (!fs::is_directory(GetDataDir(false))) {
-        throw std::runtime_error(
-            strprintf("specified data directory \"%s\" does not exist.",
-                      gArgs.GetArg("-datadir", "").c_str()));
+        error = strprintf("specified data directory \"%s\" does not exist.",
+                          gArgs.GetArg("-datadir", "").c_str());
+        return false;
     }
+    return true;
 }
 
 std::string ArgsManager::GetChainName() const {
@@ -776,21 +1088,40 @@ bool TryCreateDirectories(const fs::path &p) {
     return false;
 }
 
-void FileCommit(FILE *file) {
-    // Harmless if redundantly called.
-    fflush(file);
+bool FileCommit(FILE *file) {
+    // harmless if redundantly called
+    if (fflush(file) != 0) {
+        LogPrintf("%s: fflush failed: %d\n", __func__, errno);
+        return false;
+    }
 #ifdef WIN32
     HANDLE hFile = (HANDLE)_get_osfhandle(_fileno(file));
-    FlushFileBuffers(hFile);
+    if (FlushFileBuffers(hFile) == 0) {
+        LogPrintf("%s: FlushFileBuffers failed: %d\n", __func__,
+                  GetLastError());
+        return false;
+    }
 #else
 #if defined(__linux__) || defined(__NetBSD__)
-    fdatasync(fileno(file));
+    // Ignore EINVAL for filesystems that don't support sync
+    if (fdatasync(fileno(file)) != 0 && errno != EINVAL) {
+        LogPrintf("%s: fdatasync failed: %d\n", __func__, errno);
+        return false;
+    }
 #elif defined(__APPLE__) && defined(F_FULLFSYNC)
-    fcntl(fileno(file), F_FULLFSYNC, 0);
+    // Manpage says "value other than -1" is returned on success
+    if (fcntl(fileno(file), F_FULLFSYNC, 0) == -1) {
+        LogPrintf("%s: fcntl F_FULLFSYNC failed: %d\n", __func__, errno);
+        return false;
+    }
 #else
-    fsync(fileno(file));
+    if (fsync(fileno(file)) != 0 && errno != EINVAL) {
+        LogPrintf("%s: fsync failed: %d\n", __func__, errno);
+        return false;
+    }
 #endif
 #endif
+    return true;
 }
 
 bool TruncateFile(FILE *file, unsigned int length) {
@@ -894,7 +1225,14 @@ void runCommand(const std::string &strCommand) {
     if (strCommand.empty()) {
         return;
     }
+#ifndef WIN32
     int nErr = ::system(strCommand.c_str());
+#else
+    int nErr = ::_wsystem(
+        std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>, wchar_t>()
+            .from_bytes(strCommand)
+            .c_str());
+#endif
     if (nErr) {
         LogPrintf("runCommand error: system(%s) returned %d\n", strCommand,
                   nErr);
@@ -943,7 +1281,11 @@ void SetupEnvironment() {
     // A dummy locale is used to extract the internal default locale, used by
     // fs::path, which is then used to explicitly imbue the path.
     std::locale loc = fs::path::imbue(std::locale::classic());
+#ifndef WIN32
     fs::path::imbue(loc);
+#else
+    fs::path::imbue(std::locale(loc, new std::codecvt_utf8_utf16<wchar_t>()));
+#endif
 }
 
 bool SetupNetworking() {

@@ -6,11 +6,11 @@
 #define BITCOIN_NETADDRESS_H
 
 #if defined(HAVE_CONFIG_H)
-#include "config/bitcoin-config.h"
+#include <config/bitcoin-config.h>
 #endif
 
-#include "compat.h"
-#include "serialize.h"
+#include <compat.h>
+#include <serialize.h>
 
 #include <cstdint>
 #include <string>
@@ -20,7 +20,7 @@ enum Network {
     NET_UNROUTABLE = 0,
     NET_IPV4,
     NET_IPV6,
-    NET_TOR,
+    NET_ONION,
     NET_INTERNAL,
 
     NET_MAX,
@@ -192,7 +192,9 @@ public:
         READWRITE(FLATDATA(ip));
         unsigned short portN = htons(port);
         READWRITE(FLATDATA(portN));
-        if (ser_action.ForRead()) port = ntohs(portN);
+        if (ser_action.ForRead()) {
+            port = ntohs(portN);
+        }
     }
 };
 

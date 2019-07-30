@@ -2,11 +2,11 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "support/lockedpool.h"
-#include "support/cleanse.h"
+#include <support/cleanse.h>
+#include <support/lockedpool.h>
 
 #if defined(HAVE_CONFIG_H)
-#include "config/bitcoin-config.h"
+#include <config/bitcoin-config.h>
 #endif
 
 #ifdef WIN32
@@ -118,7 +118,7 @@ Arena::Stats Arena::stats() const {
 }
 
 #ifdef ARENA_DEBUG
-void printchunk(char *base, size_t sz, bool used) {
+static void printchunk(char *base, size_t sz, bool used) {
     std::cout << "0x" << std::hex << std::setw(16) << std::setfill('0') << base
               << " 0x" << std::hex << std::setw(16) << std::setfill('0') << sz
               << " 0x" << used << std::endl;

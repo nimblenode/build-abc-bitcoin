@@ -10,6 +10,9 @@ find_package(BerkeleyDB REQUIRED)
 find_package(Event REQUIRED)
 
 add_library(wallet
+	../interfaces/wallet.cpp
+	coincontrol.cpp
+	coinselection.cpp
 	crypter.cpp
 	db.cpp
 	fees.cpp
@@ -22,6 +25,6 @@ add_library(wallet
 	walletutil.cpp
 )
 
-target_link_libraries(wallet util univalue Event ${BDBXX_LIBRARY})
+target_link_libraries(wallet common univalue Event ${BDBXX_LIBRARY})
 
 target_include_directories(wallet PUBLIC ${BDBXX_INCLUDE_DIR})

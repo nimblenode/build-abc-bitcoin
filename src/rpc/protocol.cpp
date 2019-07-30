@@ -3,14 +3,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "rpc/protocol.h"
+#include <rpc/protocol.h>
 
-#include "random.h"
-#include "tinyformat.h"
-#include "util.h"
-#include "utilstrencodings.h"
-#include "utiltime.h"
-#include "version.h"
+#include <random.h>
+#include <tinyformat.h>
+#include <util.h>
+#include <utilstrencodings.h>
+#include <utiltime.h>
+#include <version.h>
 
 #include <cstdint>
 #include <fstream>
@@ -126,4 +126,23 @@ void DeleteAuthCookie() {
         LogPrintf("%s: Unable to remove random auth cookie file: %s\n",
                   __func__, e.what());
     }
+}
+
+std::vector<UniValue> JSONRPCProcessBatchReply(const UniValue &in, size_t num) {
+    if (!in.isArray()) {
+        throw std::runtime_error("Batch must be an array");
+    }
+    std::vector<UniValue> batch(num);
+    for (size_t i = 0; i < in.size(); ++i) {
+        const UniValue &rec = in[i];
+        if (!rec.isObject()) {
+            throw std::runtime_error("Batch member must be object");
+        }
+        size_t id = rec["id"].get_int();
+        if (id >= num) {
+            throw std::runtime_error("Batch member id larger than size");
+        }
+        batch[id] = rec;
+    }
+    return batch;
 }

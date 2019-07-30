@@ -6,9 +6,9 @@
 #ifndef BITCOIN_NET_PROCESSING_H
 #define BITCOIN_NET_PROCESSING_H
 
-#include "consensus/params.h"
-#include "net.h"
-#include "validationinterface.h"
+#include <consensus/params.h>
+#include <net.h>
+#include <validationinterface.h>
 
 class Config;
 
@@ -58,6 +58,11 @@ static constexpr int64_t EXTRA_PEER_CHECK_INTERVAL = 45;
  */
 static constexpr int64_t MINIMUM_CONNECT_TIME = 30;
 
+/** Default for BIP61 (sending reject messages) */
+static constexpr bool DEFAULT_ENABLE_BIP61 = true;
+/** Enable BIP61 (sending reject messages) */
+extern bool g_enable_bip61;
+
 class PeerLogicValidation final : public CValidationInterface,
                                   public NetEventsInterface {
 private:
@@ -94,7 +99,8 @@ public:
      * @return                      True if there is more work to be done
      */
     bool SendMessages(const Config &config, CNode *pto,
-                      std::atomic<bool> &interrupt) override;
+                      std::atomic<bool> &interrupt) override
+        EXCLUSIVE_LOCKS_REQUIRED(pto->cs_sendProcessing);
 
     void ConsiderEviction(CNode *pto, int64_t time_in_seconds);
     void
@@ -107,9 +113,9 @@ private:
 };
 
 struct CNodeStateStats {
-    int nMisbehavior;
-    int nSyncHeight;
-    int nCommonHeight;
+    int nMisbehavior = 0;
+    int nSyncHeight = -1;
+    int nCommonHeight = -1;
     std::vector<int> vHeightInFlight;
 };
 

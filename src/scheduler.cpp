@@ -2,12 +2,11 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "scheduler.h"
+#include <scheduler.h>
 
-#include "random.h"
-#include "reverselock.h"
+#include <random.h>
+#include <reverselock.h>
 
-#include <boost/bind.hpp>
 #include <cassert>
 #include <utility>
 
@@ -106,14 +105,14 @@ void CScheduler::scheduleFromNow(CScheduler::Function f,
 static void Repeat(CScheduler *s, CScheduler::Predicate p,
                    int64_t deltaMilliSeconds) {
     if (p()) {
-        s->scheduleFromNow(boost::bind(&Repeat, s, p, deltaMilliSeconds),
+        s->scheduleFromNow(std::bind(&Repeat, s, p, deltaMilliSeconds),
                            deltaMilliSeconds);
     }
 }
 
 void CScheduler::scheduleEvery(CScheduler::Predicate p,
                                int64_t deltaMilliSeconds) {
-    scheduleFromNow(boost::bind(&Repeat, this, p, deltaMilliSeconds),
+    scheduleFromNow(std::bind(&Repeat, this, p, deltaMilliSeconds),
                     deltaMilliSeconds);
 }
 
@@ -130,6 +129,7 @@ CScheduler::getQueueInfo(boost::chrono::system_clock::time_point &first,
 }
 
 bool CScheduler::AreThreadsServicingQueue() const {
+    boost::unique_lock<boost::mutex> lock(newTaskMutex);
     return nThreadsServicingQueue;
 }
 
@@ -139,19 +139,27 @@ void SingleThreadedSchedulerClient::MaybeScheduleProcessQueue() {
         // Try to avoid scheduling too many copies here, but if we
         // accidentally have two ProcessQueue's scheduled at once its
         // not a big deal.
-        if (m_are_callbacks_running) return;
-        if (m_callbacks_pending.empty()) return;
+        if (m_are_callbacks_running) {
+            return;
+        }
+        if (m_callbacks_pending.empty()) {
+            return;
+        }
     }
     m_pscheduler->schedule(
         std::bind(&SingleThreadedSchedulerClient::ProcessQueue, this));
 }
 
 void SingleThreadedSchedulerClient::ProcessQueue() {
-    std::function<void(void)> callback;
+    std::function<void()> callback;
     {
         LOCK(m_cs_callbacks_pending);
-        if (m_are_callbacks_running) return;
-        if (m_callbacks_pending.empty()) return;
+        if (m_are_callbacks_running) {
+            return;
+        }
+        if (m_callbacks_pending.empty()) {
+            return;
+        }
         m_are_callbacks_running = true;
 
         callback = std::move(m_callbacks_pending.front());
@@ -159,8 +167,8 @@ void SingleThreadedSchedulerClient::ProcessQueue() {
     }
 
     // RAII the setting of fCallbacksRunning and calling
-    // MaybeScheduleProcessQueue
-    // to ensure both happen safely even if callback() throws.
+    // MaybeScheduleProcessQueue to ensure both happen safely even if callback()
+    // throws.
     struct RAIICallbacksRunning {
         SingleThreadedSchedulerClient *instance;
         explicit RAIICallbacksRunning(SingleThreadedSchedulerClient *_instance)
@@ -178,7 +186,7 @@ void SingleThreadedSchedulerClient::ProcessQueue() {
 }
 
 void SingleThreadedSchedulerClient::AddToProcessQueue(
-    std::function<void(void)> func) {
+    std::function<void()> func) {
     assert(m_pscheduler);
 
     {
@@ -196,4 +204,9 @@ void SingleThreadedSchedulerClient::EmptyQueue() {
         LOCK(m_cs_callbacks_pending);
         should_continue = !m_callbacks_pending.empty();
     }
+}
+
+size_t SingleThreadedSchedulerClient::CallbacksPending() {
+    LOCK(m_cs_callbacks_pending);
+    return m_callbacks_pending.size();
 }

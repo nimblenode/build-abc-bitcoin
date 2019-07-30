@@ -2,20 +2,21 @@
 # Copyright (c) 2015-2016 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
+"""Test multiple RPC users."""
 
-#
-# Test multiple rpc user config option rpcauth
-#
-
-from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import str_to_b64str, assert_equal
-
-import os
 import http.client
+import os
 import urllib.parse
 
+from test_framework.test_framework import BitcoinTestFramework
+from test_framework.util import (
+    assert_equal,
+    get_datadir_path,
+    str_to_b64str,
+)
 
-class HTTPBasicsTest (BitcoinTestFramework):
+
+class HTTPBasicsTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
 
@@ -26,10 +27,10 @@ class HTTPBasicsTest (BitcoinTestFramework):
         rpcauth2 = "rpcauth=rt2:f8607b1a88861fac29dfccf9b52ff9f$ff36a0c23c8c62b4846112e50fa888416e94c17bfd4c42f88fd8f55ec6a3137e"
         rpcuser = "rpcuser=rpcuser💻"
         rpcpassword = "rpcpassword=rpcpassword🔑"
-        with open(os.path.join(self.options.tmpdir + "/node0", "bitcoin.conf"), 'a', encoding='utf8') as f:
+        with open(os.path.join(get_datadir_path(self.options.tmpdir, 0), "bitcoin.conf"), 'a', encoding='utf8') as f:
             f.write(rpcauth + "\n")
             f.write(rpcauth2 + "\n")
-        with open(os.path.join(self.options.tmpdir + "/node1", "bitcoin.conf"), 'a', encoding='utf8') as f:
+        with open(os.path.join(get_datadir_path(self.options.tmpdir, 1), "bitcoin.conf"), 'a', encoding='utf8') as f:
             f.write(rpcuser + "\n")
             f.write(rpcpassword + "\n")
 
@@ -44,11 +45,9 @@ class HTTPBasicsTest (BitcoinTestFramework):
         authpair = url.username + ':' + url.password
 
         # New authpair generated via share/rpcuser tool
-        rpcauth = "rpcauth=rt:93648e835a54c573682c2eb19f882535$7681e9c5b74bdd85e78166031d2058e1069b3ed7ed967c93fc63abba06f31144"
         password = "cA773lm788buwYe4g4WT+05pKyNruVKjQ25x3n0DQcM="
 
         # Second authpair with different username
-        rpcauth2 = "rpcauth=rt2:f8607b1a88861fac29dfccf9b52ff9f$ff36a0c23c8c62b4846112e50fa888416e94c17bfd4c42f88fd8f55ec6a3137e"
         password2 = "8/F3uMDw4KSEbw96U3CA1C4X05dkHDN2BPFjTgZW4KI="
         authpairnew = "rt:" + password
 

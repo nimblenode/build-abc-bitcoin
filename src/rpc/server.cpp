@@ -4,21 +4,20 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "rpc/server.h"
+#include <rpc/server.h>
 
-#include "base58.h"
-#include "config.h"
-#include "fs.h"
-#include "init.h"
-#include "random.h"
-#include "sync.h"
-#include "ui_interface.h"
-#include "util.h"
-#include "utilstrencodings.h"
+#include <config.h>
+#include <fs.h>
+#include <init.h>
+#include <key_io.h>
+#include <random.h>
+#include <sync.h>
+#include <ui_interface.h>
+#include <util.h>
+#include <utilstrencodings.h>
 
 #include <univalue.h>
 
-#include <boost/algorithm/string/case_conv.hpp> // for to_upper()
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/bind.hpp>
@@ -55,7 +54,7 @@ UniValue RPCServer::ExecuteCommand(Config &config,
         auto commandsReadView = commands.getReadView();
         auto iter = commandsReadView->find(commandName);
         if (iter != commandsReadView.end()) {
-            return iter->second.get()->Execute(request.params);
+            return iter->second.get()->Execute(request);
         }
     }
 
@@ -68,8 +67,9 @@ UniValue RPCServer::ExecuteCommand(Config &config,
 
 void RPCServer::RegisterCommand(std::unique_ptr<RPCCommand> command) {
     if (command != nullptr) {
+        const std::string &commandName = command->GetName();
         commands.getWriteView()->insert(
-            std::make_pair(command->GetName(), std::move(command)));
+            std::make_pair(commandName, std::move(command)));
     }
 }
 
@@ -88,10 +88,10 @@ void RPCServerSignals::OnStopped(std::function<void()> slot) {
 }
 
 void RPCTypeCheck(const UniValue &params,
-                  const std::list<UniValue::VType> &typesExpected,
+                  const std::list<UniValueType> &typesExpected,
                   bool fAllowNull) {
     unsigned int i = 0;
-    for (UniValue::VType t : typesExpected) {
+    for (const UniValueType &t : typesExpected) {
         if (params.size() <= i) {
             break;
         }
@@ -104,11 +104,13 @@ void RPCTypeCheck(const UniValue &params,
     }
 }
 
-void RPCTypeCheckArgument(const UniValue &value, UniValue::VType typeExpected) {
-    if (value.type() != typeExpected) {
-        throw JSONRPCError(RPC_TYPE_ERROR, strprintf("Expected type %s, got %s",
-                                                     uvTypeName(typeExpected),
-                                                     uvTypeName(value.type())));
+void RPCTypeCheckArgument(const UniValue &value,
+                          const UniValueType &typeExpected) {
+    if (!typeExpected.typeAny && value.type() != typeExpected.type) {
+        throw JSONRPCError(RPC_TYPE_ERROR,
+                           strprintf("Expected type %s, got %s",
+                                     uvTypeName(typeExpected.type),
+                                     uvTypeName(value.type())));
     }
 }
 
@@ -157,15 +159,6 @@ Amount AmountFromValue(const UniValue &value) {
     }
 
     return amt;
-}
-
-UniValue ValueFromAmount(const Amount amount) {
-    bool sign = amount < Amount::zero();
-    Amount n_abs(sign ? -amount : amount);
-    int64_t quotient = n_abs / COIN;
-    int64_t remainder = (n_abs % COIN) / SATOSHI;
-    return UniValue(UniValue::VNUM, strprintf("%s%d.%08d", sign ? "-" : "",
-                                              quotient, remainder));
 }
 
 uint256 ParseHashV(const UniValue &v, std::string strName) {
@@ -222,11 +215,9 @@ std::string CRPCTable::help(Config &config, const std::string &strCommand,
     std::vector<std::pair<std::string, const ContextFreeRPCCommand *>>
         vCommands;
 
-    for (std::map<std::string, const ContextFreeRPCCommand *>::const_iterator
-             mi = mapCommands.begin();
-         mi != mapCommands.end(); ++mi) {
+    for (const auto &entry : mapCommands) {
         vCommands.push_back(
-            std::make_pair(mi->second->category + mi->first, mi->second));
+            std::make_pair(entry.second->category + entry.first, entry.second));
     }
     sort(vCommands.begin(), vCommands.end());
 
@@ -266,10 +257,7 @@ std::string CRPCTable::help(Config &config, const std::string &strCommand,
                         strRet += "\n";
                     }
                     category = pcmd->category;
-                    std::string firstLetter = category.substr(0, 1);
-                    boost::to_upper(firstLetter);
-                    strRet +=
-                        "== " + firstLetter + category.substr(1) + " ==\n";
+                    strRet += "== " + Capitalize(category) + " ==\n";
                 }
             }
             strRet += strHelp + "\n";
@@ -589,7 +577,7 @@ void RPCUnsetTimerInterface(RPCTimerInterface *iface) {
     }
 }
 
-void RPCRunLater(const std::string &name, std::function<void(void)> func,
+void RPCRunLater(const std::string &name, std::function<void()> func,
                  int64_t nSeconds) {
     if (!timerInterface) {
         throw JSONRPCError(RPC_INTERNAL_ERROR,

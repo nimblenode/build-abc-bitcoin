@@ -1,5 +1,5 @@
-#!/usr/bin/env python
-# Copyright (c) 2015-2016 The Bitcoin Core developers
+#!/usr/bin/env python3
+# Copyright (c) 2015-2017 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 '''
@@ -8,7 +8,6 @@ Exit status will be 0 if successful, and the program will be silent.
 Otherwise the exit status will be 1 and it will log which executables failed which checks.
 Needs `readelf` (for ELF) and `objdump` (for PE).
 '''
-from __future__ import division, print_function, unicode_literals
 import subprocess
 import sys
 import os
@@ -212,7 +211,7 @@ if __name__ == '__main__':
         try:
             etype = identify_executable(filename)
             if etype is None:
-                print('%s: unknown format' % filename)
+                print('{}: unknown format'.format(filename))
                 retval = 1
                 continue
 
@@ -225,11 +224,11 @@ if __name__ == '__main__':
                     else:
                         failed.append(name)
             if failed:
-                print('%s: failed %s' % (filename, ' '.join(failed)))
+                print('{}: failed {}'.format(filename, ' '.join(failed)))
                 retval = 1
             if warning:
-                print('%s: warning %s' % (filename, ' '.join(warning)))
+                print('{}: warning {}'.format(filename, ' '.join(warning)))
         except IOError:
-            print('%s: cannot open' % filename)
+            print('{}: cannot open'.format(filename))
             retval = 1
     sys.exit(retval)

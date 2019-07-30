@@ -3,39 +3,47 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "data/tx_invalid.json.h"
-#include "data/tx_valid.json.h"
-#include "test/test_bitcoin.h"
+#include <chainparams.h> // For CChainParams
+#include <checkqueue.h>
+#include <clientversion.h>
+#include <config.h>
+#include <consensus/tx_verify.h>
+#include <consensus/validation.h>
+#include <core_io.h>
+#include <key.h>
+#include <keystore.h>
+#include <policy/policy.h>
+#include <script/script.h>
+#include <script/script_error.h>
+#include <script/sign.h>
+#include <script/standard.h>
+#include <streams.h>
+#include <util.h>
+#include <utilstrencodings.h>
+#include <validation.h>
 
-#include "chainparams.h" // For CChainParams
-#include "checkqueue.h"
-#include "clientversion.h"
-#include "config.h"
-#include "consensus/tx_verify.h"
-#include "consensus/validation.h"
-#include "core_io.h"
-#include "key.h"
-#include "keystore.h"
-#include "policy/policy.h"
-#include "script/script.h"
-#include "script/script_error.h"
-#include "script/sign.h"
-#include "script/standard.h"
-#include "test/jsonutil.h"
-#include "test/scriptflags.h"
-#include "utilstrencodings.h"
-#include "validation.h"
-
-#include <map>
-#include <string>
+#include <test/data/tx_invalid.json.h>
+#include <test/data/tx_valid.json.h>
+#include <test/jsonutil.h>
+#include <test/scriptflags.h>
+#include <test/test_bitcoin.h>
 
 #include <boost/test/unit_test.hpp>
 
 #include <univalue.h>
 
+#include <map>
+#include <string>
+
 typedef std::vector<uint8_t> valtype;
 
 BOOST_FIXTURE_TEST_SUITE(transaction_tests, BasicTestingSetup)
+
+static COutPoint buildOutPoint(const UniValue &vinput) {
+    TxId txid;
+    txid.SetHex(vinput[0].get_str());
+    return COutPoint(txid, vinput[1].get_int());
+}
 
 BOOST_AUTO_TEST_CASE(tx_valid) {
     // Read tests from test/data/tx_valid.json
@@ -76,8 +84,7 @@ BOOST_AUTO_TEST_CASE(tx_valid) {
                     fValid = false;
                     break;
                 }
-                COutPoint outpoint(uint256S(vinput[0].get_str()),
-                                   vinput[1].get_int());
+                COutPoint outpoint = buildOutPoint(vinput);
                 mapprevOutScriptPubKeys[outpoint] =
                     ParseScript(vinput[2].get_str());
                 if (vinput.size() >= 4) {
@@ -131,7 +138,7 @@ BOOST_AUTO_TEST_CASE(tx_valid) {
                         TransactionSignatureChecker(&tx, i, amount, txdata),
                         &err),
                     strTest);
-                BOOST_CHECK_MESSAGE(err == SCRIPT_ERR_OK,
+                BOOST_CHECK_MESSAGE(err == ScriptError::OK,
                                     ScriptErrorString(err));
             }
         }
@@ -152,7 +159,9 @@ BOOST_AUTO_TEST_CASE(tx_invalid) {
         std::string(json_tests::tx_invalid,
                     json_tests::tx_invalid + sizeof(json_tests::tx_invalid)));
 
-    ScriptError err;
+    // Initialize to ScriptError::OK. The tests expect err to be changed to a
+    // value other than ScriptError::OK.
+    ScriptError err = ScriptError::OK;
     for (size_t idx = 0; idx < tests.size(); idx++) {
         UniValue test = tests[idx];
         std::string strTest = test.write();
@@ -177,8 +186,7 @@ BOOST_AUTO_TEST_CASE(tx_invalid) {
                     fValid = false;
                     break;
                 }
-                COutPoint outpoint(uint256S(vinput[0].get_str()),
-                                   vinput[1].get_int());
+                COutPoint outpoint = buildOutPoint(vinput);
                 mapprevOutScriptPubKeys[outpoint] =
                     ParseScript(vinput[2].get_str());
                 if (vinput.size() >= 4) {
@@ -218,7 +226,7 @@ BOOST_AUTO_TEST_CASE(tx_invalid) {
                     TransactionSignatureChecker(&tx, i, amount, txdata), &err);
             }
             BOOST_CHECK_MESSAGE(!fValid, strTest);
-            BOOST_CHECK_MESSAGE(err != SCRIPT_ERR_OK, ScriptErrorString(err));
+            BOOST_CHECK_MESSAGE(err != ScriptError::OK, ScriptErrorString(err));
         }
     }
 }
@@ -331,9 +339,11 @@ BOOST_AUTO_TEST_CASE(test_Get) {
                       (50 + 21 + 22) * CENT);
 }
 
-void CreateCreditAndSpend(const CKeyStore &keystore, const CScript &outscript,
-                          CTransactionRef &output, CMutableTransaction &input,
-                          bool success = true) {
+static void CreateCreditAndSpend(const CKeyStore &keystore,
+                                 const CScript &outscript,
+                                 CTransactionRef &output,
+                                 CMutableTransaction &input,
+                                 bool success = true) {
     CMutableTransaction outputm;
     outputm.nVersion = 1;
     outputm.vin.resize(1);
@@ -369,8 +379,9 @@ void CreateCreditAndSpend(const CKeyStore &keystore, const CScript &outscript,
     BOOST_CHECK(input.vout[0] == inputm.vout[0]);
 }
 
-void CheckWithFlag(const CTransactionRef &output,
-                   const CMutableTransaction &input, int flags, bool success) {
+static void CheckWithFlag(const CTransactionRef &output,
+                          const CMutableTransaction &input, int flags,
+                          bool success) {
     ScriptError error;
     CTransaction inputi(input);
     bool ret = VerifyScript(
@@ -395,7 +406,7 @@ static CScript PushAll(const std::vector<valtype> &values) {
     return result;
 }
 
-void ReplaceRedeemScript(CScript &script, const CScript &redeemScript) {
+static void ReplaceRedeemScript(CScript &script, const CScript &redeemScript) {
     std::vector<valtype> stack;
     EvalScript(stack, script, SCRIPT_VERIFY_STRICTENC, BaseSignatureChecker());
     BOOST_CHECK(stack.size() > 0);
@@ -431,8 +442,8 @@ BOOST_AUTO_TEST_CASE(test_big_transaction) {
 
     for (size_t ij = 0; ij < OUTPUT_COUNT; ij++) {
         size_t i = mtx.vin.size();
-        uint256 prevId = uint256S(
-            "0000000000000000000000000000000000000000000000000000000000000100");
+        TxId prevId(uint256S("0000000000000000000000000000000000000000000000000"
+                             "000000000000100"));
         COutPoint outpoint(prevId, i);
 
         mtx.vin.resize(mtx.vin.size() + 1);
@@ -788,26 +799,6 @@ BOOST_AUTO_TEST_CASE(txsize_activation_test) {
         config, minTx, state, magneticAnomalyActivationHeight, 5678, 1234));
     BOOST_CHECK_EQUAL(state.GetRejectCode(), REJECT_INVALID);
     BOOST_CHECK_EQUAL(state.GetRejectReason(), "bad-txns-undersize");
-}
-
-BOOST_AUTO_TEST_CASE(tx_transaction_fee) {
-    std::vector<size_t> sizes = {1, 2, 4, 8, 16, 32, 64, 128, 256, 512};
-    for (size_t inputs : sizes) {
-        for (size_t outputs : sizes) {
-            CMutableTransaction mtx;
-            mtx.vin.resize(inputs);
-            mtx.vout.resize(outputs);
-            CTransaction tx(mtx);
-            auto txBillableSize = tx.GetBillableSize();
-            auto txSize = tx.GetTotalSize();
-            BOOST_CHECK(txBillableSize > 0);
-            if (inputs > outputs) {
-                BOOST_CHECK(txBillableSize <= txSize);
-            } else {
-                BOOST_CHECK(txBillableSize >= txSize);
-            }
-        }
-    }
 }
 
 BOOST_AUTO_TEST_SUITE_END()

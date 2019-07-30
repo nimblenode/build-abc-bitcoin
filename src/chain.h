@@ -6,15 +6,16 @@
 #ifndef BITCOIN_CHAIN_H
 #define BITCOIN_CHAIN_H
 
-#include "arith_uint256.h"
-#include "blockstatus.h"
-#include "blockvalidity.h"
-#include "consensus/params.h"
-#include "diskblockpos.h"
-#include "pow.h"
-#include "primitives/block.h"
-#include "tinyformat.h"
-#include "uint256.h"
+#include <arith_uint256.h>
+#include <blockstatus.h>
+#include <blockvalidity.h>
+#include <consensus/params.h>
+#include <flatfile.h>
+#include <pow.h>
+#include <primitives/block.h>
+#include <sync.h>
+#include <tinyformat.h>
+#include <uint256.h>
 
 #include <unordered_map>
 #include <vector>
@@ -23,7 +24,7 @@
  * Maximum amount of time that a block timestamp is allowed to exceed the
  * current network-adjusted time before the block will be accepted.
  */
-static const int64_t MAX_FUTURE_BLOCK_TIME = 2 * 60 * 60;
+static constexpr int64_t MAX_FUTURE_BLOCK_TIME = 2 * 60 * 60;
 
 /**
  * Timestamp window used as a grace period by code that compares external
@@ -31,7 +32,15 @@ static const int64_t MAX_FUTURE_BLOCK_TIME = 2 * 60 * 60;
  * to block timestamps. This should be set at least as high as
  * MAX_FUTURE_BLOCK_TIME.
  */
-static const int64_t TIMESTAMP_WINDOW = MAX_FUTURE_BLOCK_TIME;
+static constexpr int64_t TIMESTAMP_WINDOW = MAX_FUTURE_BLOCK_TIME;
+
+/**
+ * Maximum gap between node time and block time used
+ * for the "Catching up..." mode in GUI.
+ *
+ * Ref: https://github.com/bitcoin/bitcoin/pull/1026
+ */
+static constexpr int64_t MAX_BLOCK_TIME_GAP = 90 * 60;
 
 /**
  * The block chain is a tree shaped structure starting with the genesis block at
@@ -96,7 +105,7 @@ public:
     //! (memory only) block header metadata
     uint64_t nTimeReceived;
 
-    //! (memory only) Maximum nTime in the chain upto and including this block.
+    //! (memory only) Maximum nTime in the chain up to and including this block.
     unsigned int nTimeMax;
 
     void SetNull() {
@@ -239,7 +248,14 @@ struct BlockHasher {
 };
 
 typedef std::unordered_map<uint256, CBlockIndex *, BlockHasher> BlockMap;
-extern BlockMap mapBlockIndex;
+extern BlockMap &mapBlockIndex;
+extern CCriticalSection cs_main;
+
+inline CBlockIndex *LookupBlockIndex(const uint256 &hash) {
+    AssertLockHeld(cs_main);
+    BlockMap::const_iterator it = mapBlockIndex.find(hash);
+    return it == mapBlockIndex.end() ? nullptr : it->second;
+}
 
 arith_uint256 GetBlockProof(const CBlockIndex &block);
 

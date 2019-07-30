@@ -7,30 +7,29 @@
             "type": "clang-format",
             "version": "7.0",
             "bin": ["clang-format-7", "clang-format"],
-            "include": "(^src/.*\\.(h|c|cpp)$)",
+            "include": "(^src/.*\\.(h|c|cpp|mm)$)",
             "exclude": [
                 "(^src/(secp256k1|univalue|leveldb)/)"
             ]
         },
         "autopep8": {
             "type": "autopep8",
+            "version": ">=1.3.4",
             "include": "(\\.py$)"
         },
         "flake8": {
             "type": "flake8",
             "include": "(\\.py$)",
             "flags": [
-                "--select=F401"
+                "--select=E112,E113,E115,E116,E125,E131,E133,E223,E224,E271,E272,E273,E274,E275,E304,E306,E502,E702,E703,E714,E721,E741,E742,E743,F401,F402,F403,F404,F405,F406,F407,F601,F602,F621,F622,F631,F701,F702,F703,F704,F705,F706,F707,F811,F812,F822,F823,F831,W292,W601,W602,W603,W604,W605"
             ]
         },
         "lint-format-strings": {
-            "type": "script-and-regex",
+            "type": "lint-format-strings",
             "include": "(^src/.*\\.(h|c|cpp)$)",
             "exclude": [
                 "(^src/(secp256k1|univalue|leveldb)/)"
-            ],
-            "script-and-regex.script": "test/lint/lint-format-strings.sh",
-            "script-and-regex.regex": "/^(?P<file>.+): (?P<message>.+:.+)$/m"
+            ]
         },
         "check-doc": {
             "type": "check-doc",
@@ -39,6 +38,95 @@
         "lint-tests": {
             "type": "lint-tests",
             "include": "(^src/(rpc/|wallet/)?test/.*\\.(cpp)$)"
+        },
+        "lint-python-format": {
+            "type": "lint-python-format",
+            "include": "(\\.py$)",
+            "exclude": [
+                "(^test/lint/lint-python-format\\.py$)"
+            ]
+        },
+        "phpcs": {
+            "type": "phpcs",
+            "include": "(\\.php$)",
+            "exclude": [
+                "(^arcanist/__phutil_library_.+\\.php$)"
+            ],
+            "phpcs.standard": "arcanist/phpcs.xml"
+        },
+        "lint-locale-dependence": {
+            "type": "lint-locale-dependence",
+            "include": "(^src/.*\\.(h|cpp)$)",
+            "exclude": [
+                "(^src/(crypto/ctaes/|leveldb/|secp256k1/|seeder/|tinyformat.h|univalue/))"
+            ]
+        },
+        "lint-cheader": {
+            "type": "lint-cheader",
+            "include": "(^src/.*\\.(h|cpp)$)",
+            "exclude": [
+                "(^src/(crypto/ctaes|secp256k1|univalue|leveldb)/)"
+            ]
+        },
+        "spelling": {
+            "type": "spelling",
+            "exclude": [
+                "(^build-aux/m4/)",
+                "(^depends/)",
+                "(^doc/release-notes/)",
+                "(^src/(qt/locale|secp256k1|univalue|leveldb)/)",
+                "(^test/lint/dictionary/)"
+            ],
+            "spelling.dictionaries": [
+                "test/lint/dictionary/english.json"
+            ]
+        },
+        "lint-assert-with-side-effects": {
+            "type": "lint-assert-with-side-effects",
+            "include": "(^src/.*\\.(h|cpp)$)",
+            "exclude": [
+                "(^src/(secp256k1|univalue|leveldb)/)"
+            ]
+        },
+        "lint-include-quotes": {
+            "type": "lint-include-quotes",
+            "include": "(^src/.*\\.(h|cpp)$)",
+            "exclude": [
+                "(^src/(secp256k1|univalue|leveldb)/)"
+            ]
+        },
+        "lint-include-guard": {
+            "type": "lint-include-guard",
+            "include": "(^src/.*\\.h$)",
+            "exclude": [
+                "(^src/(crypto/ctaes|secp256k1|univalue|leveldb)/)",
+                "(^src/tinyformat.h$)"
+            ]
+        },
+        "lint-include-source": {
+            "type": "lint-include-source",
+            "include": "(^src/.*\\.(h|c|cpp)$)",
+            "exclude": [
+                "(^src/(secp256k1|univalue|leveldb)/)"
+            ]
+        },
+        "lint-stdint": {
+            "type": "lint-stdint",
+            "include": "(^src/.*\\.(h|c|cpp)$)",
+            "exclude": [
+                "(^src/(secp256k1|univalue|leveldb)/)"
+            ]
+        },
+        "lint-source-filename": {
+            "type": "lint-source-filename",
+            "include": "(^src/.*\\.(h|c|cpp)$)",
+            "exclude": [
+                "(^src/(secp256k1|univalue|leveldb)/)"
+            ]
+        },
+        "lint-boost-dependencies": {
+            "type": "lint-boost-dependencies",
+            "include": "(^src/.*\\.(h|cpp)$)"
         }
     }
 }

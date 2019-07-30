@@ -7,17 +7,7 @@
 #define BITCOIN_COMPAT_H
 
 #if defined(HAVE_CONFIG_H)
-#include "config/bitcoin-config.h"
-#endif
-
-#include <type_traits>
-
-// GCC 4.8 is missing some C++11 type_traits,
-// https://www.gnu.org/software/gcc/gcc-5/changes.html
-#if defined(__GNUC__) && __GNUC__ < 5
-#define IS_TRIVIALLY_CONSTRUCTIBLE std::is_trivial
-#else
-#define IS_TRIVIALLY_CONSTRUCTIBLE std::is_trivially_constructible
+#include <config/bitcoin-config.h>
 #endif
 
 #ifdef WIN32
@@ -59,7 +49,7 @@
 
 #ifndef WIN32
 typedef unsigned int SOCKET;
-#include "errno.h"
+#include <cerrno>
 #define WSAGetLastError() errno
 #define WSAEINVAL EINVAL
 #define WSAEALREADY EALREADY

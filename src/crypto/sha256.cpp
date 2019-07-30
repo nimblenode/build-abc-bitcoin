@@ -2,8 +2,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "crypto/sha256.h"
-#include "crypto/common.h"
+#include <crypto/common.h>
+#include <crypto/sha256.h>
 
 #include <atomic>
 #include <cassert>
@@ -27,11 +27,11 @@ void Transform_8way(uint8_t *out, const uint8_t *in);
 }
 
 namespace sha256d64_shani {
-void Transform_2way(unsigned char *out, const unsigned char *in);
+void Transform_2way(uint8_t *out, const uint8_t *in);
 }
 
 namespace sha256_shani {
-void Transform(uint32_t *s, const unsigned char *chunk, size_t blocks);
+void Transform(uint32_t *s, const uint8_t *chunk, size_t blocks);
 }
 
 // Internal implementation code.
@@ -700,7 +700,7 @@ bool SelfTest() {
 
     // Test TransformD64_2way, if available.
     if (TransformD64_2way) {
-        unsigned char out[64];
+        uint8_t out[64];
         TransformD64_2way(out, data + 1);
         if (!std::equal(out, out + 64, result_d64)) return false;
     }

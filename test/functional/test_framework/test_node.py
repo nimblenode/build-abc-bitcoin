@@ -12,22 +12,30 @@ import logging
 import os
 import re
 import subprocess
+import sys
+import tempfile
 import time
 
 from .authproxy import JSONRPCException
-from .mininode import COIN, FromHex, CTransaction
+from .messages import COIN, CTransaction, FromHex
 from .util import (
+    append_config,
     assert_equal,
+    delete_cookie_file,
     get_rpc_proxy,
+    p2p_port,
     rpc_url,
     wait_until,
-    p2p_port,
 )
 
 # For Python 3.4 compatibility
 JSONDecodeError = getattr(json, "JSONDecodeError", ValueError)
 
 BITCOIND_PROC_WAIT_TIMEOUT = 60
+
+
+class FailedToStartError(Exception):
+    """Raised when a node fails to start correctly."""
 
 
 class TestNode():
@@ -43,9 +51,11 @@ class TestNode():
     To make things easier for the test writer, any unrecognised messages will
     be dispatched to the RPC connection."""
 
-    def __init__(self, i, dirname, extra_args, host, rpc_port, p2p_port, timewait, binary, stderr, mocktime, coverage_dir, use_cli=False):
+    def __init__(self, i, datadir, host, rpc_port, p2p_port, timewait, bitcoind, bitcoin_cli, mocktime, coverage_dir, extra_conf=None, extra_args=None, use_cli=False):
         self.index = i
-        self.datadir = os.path.join(dirname, "node" + str(i))
+        self.datadir = datadir
+        self.stdout_dir = os.path.join(self.datadir, "stdout")
+        self.stderr_dir = os.path.join(self.datadir, "stderr")
         self.host = host
         self.rpc_port = rpc_port
         self.p2p_port = p2p_port
@@ -55,19 +65,27 @@ class TestNode():
         else:
             # Wait for up to 60 seconds for the RPC server to respond
             self.rpc_timeout = 60
-        if binary is None:
-            self.binary = os.getenv("BITCOIND", "bitcoind")
-        else:
-            self.binary = binary
-        self.stderr = stderr
+        self.binary = bitcoind
+        if not os.path.isfile(self.binary):
+            raise FileNotFoundError(
+                "Binary '{}' could not be found.\nTry setting it manually:\n\tBITCOIND=<path/to/bitcoind> {}".format(self.binary, sys.argv[0]))
         self.coverage_dir = coverage_dir
-        # Most callers will just need to add extra args to the standard list below. For those callers that need more flexibity, they can just set the args property directly.
+        if extra_conf != None:
+            append_config(datadir, extra_conf)
+        # Most callers will just need to add extra args to the default list
+        # below.
+        # For those callers that need more flexibity, they can access the
+        # default args using the provided facilities.
+        # Note that common args are set in the config file (see
+        # initialize_datadir)
         self.extra_args = extra_args
-        self.args = [self.binary, "-datadir=" + self.datadir, "-server", "-keypool=1", "-discover=0", "-rest", "-logtimemicros",
-                     "-debug", "-debugexclude=libevent", "-debugexclude=leveldb", "-mocktime=" + str(mocktime), "-uacomment=" + self.name]
+        self.default_args = ["-datadir=" + self.datadir, "-logtimemicros", "-debug", "-debugexclude=libevent",
+                             "-debugexclude=leveldb", "-mocktime=" + str(mocktime), "-uacomment=" + self.name]
 
-        self.cli = TestNodeCLI(
-            os.getenv("BITCOINCLI", "bitcoin-cli"), self.datadir)
+        if not os.path.isfile(bitcoin_cli):
+            raise FileNotFoundError(
+                "Binary '{}' could not be found.\nTry setting it manually:\n\tBITCOINCLI=<path/to/bitcoin-cli> {}".format(bitcoin_cli, sys.argv[0]))
+        self.cli = TestNodeCLI(bitcoin_cli, self.datadir)
         self.use_cli = use_cli
 
         self.running = False
@@ -76,9 +94,20 @@ class TestNode():
         self.rpc = None
         self.url = None
         self.relay_fee_cache = None
-        self.log = logging.getLogger('TestFramework.node%d' % i)
-
+        self.log = logging.getLogger('TestFramework.node{}'.format(i))
+        # Whether to kill the node when this object goes away
+        self.cleanup_on_exit = True
         self.p2ps = []
+
+    def __del__(self):
+        # Ensure that we don't leave any bitcoind processes lying around after
+        # the test ends
+        if self.process and self.cleanup_on_exit:
+            # Should only happen on test failure
+            # Avoid using logger, as that may have already been shutdown when
+            # this destructor is called.
+            print("Cleaning up leftover process")
+            self.process.kill()
 
     def __getattr__(self, name):
         """Dispatches any unrecognised messages to the RPC connection or a CLI instance."""
@@ -89,14 +118,48 @@ class TestNode():
             assert self.rpc_connected, "Error: No RPC connection"
             return getattr(self.rpc, name)
 
-    def start(self, extra_args=None, stderr=None, *args, **kwargs):
+    def clear_default_args(self):
+        self.default_args.clear()
+
+    def extend_default_args(self, args):
+        self.default_args.extend(args)
+
+    def remove_default_args(self, args):
+        for rm_arg in args:
+            # Remove all occurrences of rm_arg in self.default_args:
+            #  - if the arg is a flag (-flag), then the names must match
+            #  - if the arg is a value (-key=value) then the name must starts
+            #    with "-key=" (the '"' char is to avoid removing "-key_suffix"
+            #    arg is "-key" is the argument to remove).
+            self.default_args = [def_arg for def_arg in self.default_args
+                                 if rm_arg != def_arg and not def_arg.startswith(rm_arg + '=')]
+
+    def start(self, extra_args=None, stdout=None, stderr=None, *args, **kwargs):
         """Start the node."""
         if extra_args is None:
             extra_args = self.extra_args
+
+        # Add a new stdout and stderr file each time bitcoind is started
         if stderr is None:
-            stderr = self.stderr
+            stderr = tempfile.NamedTemporaryFile(
+                dir=self.stderr_dir, delete=False)
+        if stdout is None:
+            stdout = tempfile.NamedTemporaryFile(
+                dir=self.stdout_dir, delete=False)
+        self.stderr = stderr
+        self.stdout = stdout
+
+        # Delete any existing cookie file -- if such a file exists (eg due to
+        # unclean shutdown), it will get overwritten anyway by bitcoind, and
+        # potentially interfere with our attempt to authenticate
+        delete_cookie_file(self.datadir)
+
+        # add environment variable LIBC_FATAL_STDERR_=1 so that libc errors are written to stderr and not the terminal
+        subp_env = dict(os.environ, LIBC_FATAL_STDERR_="1")
+
         self.process = subprocess.Popen(
-            self.args + extra_args, stderr=stderr, *args, **kwargs)
+            [self.binary] + self.default_args + extra_args, env=subp_env, stdout=stdout, stderr=stderr, *args, **kwargs)
+
         self.running = True
         self.log.debug("bitcoind started, waiting for RPC to come up")
 
@@ -105,8 +168,9 @@ class TestNode():
         # Poll at a rate of four times per second
         poll_per_s = 4
         for _ in range(poll_per_s * self.rpc_timeout):
-            assert self.process.poll(
-            ) is None, "bitcoind exited with status %i during initialization" % self.process.returncode
+            if self.process.poll() is not None:
+                raise FailedToStartError(
+                    'bitcoind exited with status {} during initialization'.format(self.process.returncode))
             try:
                 self.rpc = get_rpc_proxy(rpc_url(self.datadir, self.host, self.rpc_port),
                                          self.index, timeout=self.rpc_timeout, coveragedir=self.coverage_dir)
@@ -137,7 +201,7 @@ class TestNode():
             wallet_path = "wallet/{}".format(wallet_name)
             return self.rpc / wallet_path
 
-    def stop_node(self):
+    def stop_node(self, expected_stderr=''):
         """Stop the node."""
         if not self.running:
             return
@@ -146,6 +210,14 @@ class TestNode():
             self.stop()
         except http.client.CannotSendRequest:
             self.log.exception("Unable to stop node.")
+
+        # Check that stderr is as expected
+        self.stderr.seek(0)
+        stderr = self.stderr.read().decode('utf-8').strip()
+        if stderr != expected_stderr:
+            raise AssertionError(
+                "Unexpected stderr {} != {}".format(stderr, expected_stderr))
+
         del self.p2ps[:]
 
     def is_node_stopped(self):
@@ -170,6 +242,45 @@ class TestNode():
 
     def wait_until_stopped(self, timeout=BITCOIND_PROC_WAIT_TIMEOUT):
         wait_until(self.is_node_stopped, timeout=timeout)
+
+    def assert_start_raises_init_error(self, extra_args=None, expected_msg=None, partial_match=False, *args, **kwargs):
+        """Attempt to start the node and expect it to raise an error.
+
+        extra_args: extra arguments to pass through to bitcoind
+        expected_msg: regex that stderr should match when bitcoind fails
+
+        Will throw if bitcoind starts without an error.
+        Will throw if an expected_msg is provided and it does not match bitcoind's stdout."""
+        with tempfile.NamedTemporaryFile(dir=self.stderr_dir, delete=False) as log_stderr, \
+                tempfile.NamedTemporaryFile(dir=self.stdout_dir, delete=False) as log_stdout:
+            try:
+                self.start(extra_args, stdout=log_stdout,
+                           stderr=log_stderr, *args, **kwargs)
+                self.wait_for_rpc_connection()
+                self.stop_node()
+                self.wait_until_stopped()
+            except FailedToStartError as e:
+                self.log.debug('bitcoind failed to start: {}'.format(e))
+                self.running = False
+                self.process = None
+                # Check stderr for expected message
+                if expected_msg is not None:
+                    log_stderr.seek(0)
+                    stderr = log_stderr.read().decode('utf-8').strip()
+                    if partial_match:
+                        if re.search(expected_msg, stderr, flags=re.MULTILINE) is None:
+                            raise AssertionError(
+                                'Expected message "{}" does not partially match stderr:\n"{}"'.format(expected_msg, stderr))
+                    else:
+                        if re.fullmatch(expected_msg, stderr) is None:
+                            raise AssertionError(
+                                'Expected message "{}" does not fully match stderr:\n"{}"'.format(expected_msg, stderr))
+            else:
+                if expected_msg is None:
+                    assert_msg = "bitcoind should have exited with an error"
+                else:
+                    assert_msg = "bitcoind should have exited with expected error " + expected_msg
+                raise AssertionError(assert_msg)
 
     def node_encrypt_wallet(self, passphrase):
         """"Encrypts the wallet.
@@ -247,16 +358,16 @@ class TestNodeCLI():
     """Interface to bitcoin-cli for an individual node"""
 
     def __init__(self, binary, datadir):
-        self.args = []
+        self.options = []
         self.binary = binary
         self.datadir = datadir
         self.input = None
         self.log = logging.getLogger('TestFramework.bitcoincli')
 
-    def __call__(self, *args, input=None):
-        # TestNodeCLI is callable with bitcoin-cli command-line args
+    def __call__(self, *options, input=None):
+        # TestNodeCLI is callable with bitcoin-cli command-line options
         cli = TestNodeCLI(self.binary, self.datadir)
-        cli.args = [str(arg) for arg in args]
+        cli.options = [str(o) for o in options]
         cli.input = input
         return cli
 
@@ -272,7 +383,7 @@ class TestNodeCLI():
                 results.append(dict(error=e))
         return results
 
-    def send_cli(self, command, *args, **kwargs):
+    def send_cli(self, command=None, *args, **kwargs):
         """Run bitcoin-cli command. Deserializes returned string as python object."""
 
         pos_args = [str(arg) for arg in args]
@@ -281,10 +392,12 @@ class TestNodeCLI():
         assert not (
             pos_args and named_args), "Cannot use positional arguments and named arguments in the same bitcoin-cli call"
 
-        p_args = [self.binary, "-datadir=" + self.datadir] + self.args
+        p_args = [self.binary, "-datadir=" + self.datadir] + self.options
         if named_args:
             p_args += ["-named"]
-        p_args += [command] + pos_args + named_args
+        if command is not None:
+            p_args += [command]
+        p_args += pos_args + named_args
         self.log.debug("Running bitcoin-cli command: {}".format(command))
         process = subprocess.Popen(p_args, stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)

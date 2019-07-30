@@ -2,21 +2,19 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "paymentserver.h"
+#include <qt/paymentserver.h>
 
-#include "bitcoinunits.h"
-#include "guiutil.h"
-#include "optionsmodel.h"
-
-#include "chainparams.h"
-#include "config.h"
-#include "dstencode.h"
-#include "policy/policy.h"
-#include "ui_interface.h"
-#include "util.h"
-#include "wallet/wallet.h"
-
-#include <cstdlib>
+#include <cashaddrenc.h>
+#include <chainparams.h>
+#include <interfaces/node.h>
+#include <key_io.h>
+#include <policy/policy.h>
+#include <qt/bitcoinunits.h>
+#include <qt/guiutil.h>
+#include <qt/optionsmodel.h>
+#include <ui_interface.h>
+#include <util.h>
+#include <wallet/wallet.h>
 
 #include <openssl/x509_vfy.h>
 
@@ -41,6 +39,8 @@
 #include <QStringList>
 #include <QTextDocument>
 #include <QUrlQuery>
+
+#include <cstdlib>
 
 const int BITCOIN_IPC_CONNECT_TIMEOUT = 1000; // milliseconds
 // BIP70 payment protocol messages
@@ -135,8 +135,9 @@ void PaymentServer::LoadRootCAs(X509_STORE *_store) {
         certList = QSslCertificate::fromPath(certFile);
         // Use those certificates when fetching payment requests, too:
         QSslSocket::setDefaultCaCertificates(certList);
-    } else
+    } else {
         certList = QSslSocket::systemCaCertificates();
+    }
 
     int nRootCerts = 0;
     const QDateTime currentTime = QDateTime::currentDateTime();
@@ -188,7 +189,7 @@ void PaymentServer::LoadRootCAs(X509_STORE *_store) {
 
 static std::string ipcParseURI(const QString &arg, const CChainParams &params,
                                bool useCashAddr) {
-    const QString scheme = GUIUtil::bitcoinURIScheme(params, useCashAddr);
+    const QString scheme = QString::fromStdString(params.CashAddrPrefix());
     if (!arg.startsWith(scheme + ":", Qt::CaseInsensitive)) {
         return {};
     }
@@ -223,7 +224,8 @@ static bool ipcCanParseLegacyURI(const QString &arg,
 // Warning: ipcSendCommandLine() is called early in init, so don't use "Q_EMIT
 // message()", but "QMessageBox::"!
 //
-void PaymentServer::ipcParseCommandLine(int argc, char *argv[]) {
+void PaymentServer::ipcParseCommandLine(interfaces::Node &node, int argc,
+                                        char *argv[]) {
     std::array<const std::string *, 3> networks = {
         {&CBaseChainParams::MAIN, &CBaseChainParams::TESTNET,
          &CBaseChainParams::REGTEST}};
@@ -286,7 +288,7 @@ void PaymentServer::ipcParseCommandLine(int argc, char *argv[]) {
     }
 
     if (chosenNetwork) {
-        SelectParams(*chosenNetwork);
+        node.selectParams(*chosenNetwork);
     }
 }
 
@@ -426,7 +428,8 @@ void PaymentServer::uiReady() {
     savedPaymentRequests.clear();
 }
 
-bool PaymentServer::handleURI(const QString &scheme, const QString &s) {
+bool PaymentServer::handleURI(const CChainParams &params, const QString &s) {
+    const QString scheme = QString::fromStdString(params.CashAddrPrefix());
     if (!s.startsWith(scheme + ":", Qt::CaseInsensitive)) {
         return false;
     }
@@ -459,7 +462,7 @@ bool PaymentServer::handleURI(const QString &scheme, const QString &s) {
     SendCoinsRecipient recipient;
     if (GUIUtil::parseBitcoinURI(scheme, s, &recipient)) {
         if (!IsValidDestinationString(recipient.address.toStdString(),
-                                      GetConfig().GetChainParams())) {
+                                      params)) {
             Q_EMIT message(
                 tr("URI handling"),
                 tr("Invalid payment address %1").arg(recipient.address),
@@ -485,14 +488,7 @@ void PaymentServer::handleURIOrFile(const QString &s) {
     }
 
     // bitcoincash: CashAddr URI
-    QString schemeCash = GUIUtil::bitcoinURIScheme(Params(), true);
-    if (handleURI(schemeCash, s)) {
-        return;
-    }
-
-    // bitcoincash: Legacy URI
-    QString schemeLegacy = GUIUtil::bitcoinURIScheme(Params(), false);
-    if (handleURI(schemeLegacy, s)) {
+    if (handleURI(Params(), s)) {
         return;
     }
 
@@ -566,7 +562,7 @@ bool PaymentServer::processPaymentRequest(const PaymentRequestPlus &request,
 
     if (request.IsInitialized()) {
         // Payment request network matches client network?
-        if (!verifyNetwork(request.getDetails())) {
+        if (!verifyNetwork(optionsModel->node(), request.getDetails())) {
             Q_EMIT message(
                 tr("Payment request rejected"),
                 tr("Payment request network doesn't match client network."),
@@ -606,13 +602,12 @@ bool PaymentServer::processPaymentRequest(const PaymentRequestPlus &request,
         CTxDestination dest;
         if (ExtractDestination(sendingTo.first, dest)) {
             // Append destination address
-            addresses.append(QString::fromStdString(EncodeDestination(dest)));
+            addresses.append(
+                QString::fromStdString(EncodeCashAddr(dest, Params())));
         } else if (!recipient.authenticatedMerchant.isEmpty()) {
             // Unauthenticated payment requests to custom bitcoin addresses are
-            // not supported
-            // (there is no good way to tell the user where they are paying in a
-            // way they'd
-            // have a chance of understanding).
+            // not supported (there is no good way to tell the user where they
+            // are paying in a way they'd have a chance of understanding).
             Q_EMIT message(tr("Payment request rejected"),
                            tr("Unverified payment requests to custom payment "
                               "scripts are unsupported."),
@@ -633,7 +628,7 @@ bool PaymentServer::processPaymentRequest(const PaymentRequestPlus &request,
 
         // Extract and check amounts
         CTxOut txOut(Amount(sendingTo.second), sendingTo.first);
-        if (txOut.IsDust(dustRelayFee)) {
+        if (IsDust(txOut, optionsModel->node().getDustRelayFee())) {
             Q_EMIT message(
                 tr("Payment request error"),
                 tr("Requested payment amount of %1 is too small (considered "
@@ -681,8 +676,8 @@ void PaymentServer::fetchRequest(const QUrl &url) {
     netManager->get(netRequest);
 }
 
-void PaymentServer::fetchPaymentACK(CWallet *wallet,
-                                    SendCoinsRecipient recipient,
+void PaymentServer::fetchPaymentACK(WalletModel *walletModel,
+                                    const SendCoinsRecipient &recipient,
                                     QByteArray transaction) {
     const payments::PaymentDetails &details =
         recipient.paymentRequest.getDetails();
@@ -703,28 +698,33 @@ void PaymentServer::fetchPaymentACK(CWallet *wallet,
     payment.add_transactions(transaction.data(), transaction.size());
 
     // Create a new refund address, or re-use:
-    std::string label =
-        tr("Refund from %1").arg(recipient.authenticatedMerchant).toStdString();
-    std::set<CTxDestination> refundAddresses = wallet->GetLabelAddresses(label);
-    if (!refundAddresses.empty()) {
-        CScript s = GetScriptForDestination(*refundAddresses.begin());
+    CPubKey newKey;
+    if (walletModel->wallet().getKeyFromPool(false /* internal */, newKey)) {
+        // BIP70 requests encode the scriptPubKey directly, so we are not
+        // restricted to address types supported by the receiver. As a result,
+        // we choose the address format we also use for change. Despite an
+        // actual payment and not change, this is a close match: it's the output
+        // type we use subject to privacy issues, but not restricted by what
+        // other software supports.
+        const OutputType change_type =
+            walletModel->wallet().getDefaultChangeType() != OutputType::NONE
+                ? walletModel->wallet().getDefaultChangeType()
+                : walletModel->wallet().getDefaultAddressType();
+        walletModel->wallet().learnRelatedScripts(newKey, change_type);
+        CTxDestination dest = GetDestinationForKey(newKey, change_type);
+        std::string label = tr("Refund from %1")
+                                .arg(recipient.authenticatedMerchant)
+                                .toStdString();
+        walletModel->wallet().setAddressBook(dest, label, "refund");
+
+        CScript s = GetScriptForDestination(dest);
         payments::Output *refund_to = payment.add_refund_to();
         refund_to->set_script(&s[0], s.size());
     } else {
-        CPubKey newKey;
-        if (wallet->GetKeyFromPool(newKey)) {
-            CKeyID keyID = newKey.GetID();
-            wallet->SetAddressBook(keyID, label, "refund");
-
-            CScript s = GetScriptForDestination(keyID);
-            payments::Output *refund_to = payment.add_refund_to();
-            refund_to->set_script(&s[0], s.size());
-        } else {
-            // This should never happen, because sending coins should have just
-            // unlocked the wallet and refilled the keypool.
-            qWarning() << "PaymentServer::fetchPaymentACK: Error getting "
-                          "refund key, refund_to not set";
-        }
+        // This should never happen, because sending coins should have
+        // just unlocked the wallet and refilled the keypool.
+        qWarning() << "PaymentServer::fetchPaymentACK: Error getting refund "
+                      "key, refund_to not set";
     }
 
     int length = payment.ByteSize();
@@ -823,15 +823,14 @@ void PaymentServer::handlePaymentACK(const QString &paymentACKMsg) {
 }
 
 bool PaymentServer::verifyNetwork(
-    const payments::PaymentDetails &requestDetails) {
-    bool fVerified = requestDetails.network() == Params().NetworkIDString();
+    interfaces::Node &node, const payments::PaymentDetails &requestDetails) {
+    bool fVerified = requestDetails.network() == node.getNetwork();
     if (!fVerified) {
         qWarning() << QString("PaymentServer::%1: Payment request network "
                               "\"%2\" doesn't match client network \"%3\".")
                           .arg(__func__)
                           .arg(QString::fromStdString(requestDetails.network()))
-                          .arg(QString::fromStdString(
-                              Params().NetworkIDString()));
+                          .arg(QString::fromStdString(node.getNetwork()));
     }
     return fVerified;
 }

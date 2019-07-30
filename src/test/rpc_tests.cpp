@@ -2,14 +2,15 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "rpc/client.h"
-#include "rpc/server.h"
+#include <rpc/client.h>
+#include <rpc/server.h>
 
-#include "base58.h"
-#include "config.h"
-#include "netbase.h"
+#include <config.h>
+#include <core_io.h>
+#include <key_io.h>
+#include <netbase.h>
 
-#include "test/test_bitcoin.h"
+#include <test/test_bitcoin.h>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/test/unit_test.hpp>
@@ -53,8 +54,6 @@ BOOST_AUTO_TEST_CASE(rpc_rawparams) {
                       std::runtime_error);
     BOOST_CHECK_THROW(CallRPC("createrawtransaction not_array"),
                       std::runtime_error);
-    BOOST_CHECK_THROW(CallRPC("createrawtransaction [] []"),
-                      std::runtime_error);
     BOOST_CHECK_THROW(CallRPC("createrawtransaction {} {}"),
                       std::runtime_error);
     BOOST_CHECK_NO_THROW(CallRPC("createrawtransaction [] {}"));
@@ -80,18 +79,6 @@ BOOST_AUTO_TEST_CASE(rpc_rawparams) {
     BOOST_CHECK_THROW(
         r = CallRPC(std::string("decoderawtransaction ") + rawtx + " extra"),
         std::runtime_error);
-
-    BOOST_CHECK_THROW(CallRPC("signrawtransaction"), std::runtime_error);
-    BOOST_CHECK_THROW(CallRPC("signrawtransaction null"), std::runtime_error);
-    BOOST_CHECK_THROW(CallRPC("signrawtransaction ff00"), std::runtime_error);
-    BOOST_CHECK_NO_THROW(CallRPC(std::string("signrawtransaction ") + rawtx));
-    BOOST_CHECK_NO_THROW(CallRPC(std::string("signrawtransaction ") + rawtx +
-                                 " null null NONE|FORKID|ANYONECANPAY"));
-    BOOST_CHECK_NO_THROW(CallRPC(std::string("signrawtransaction ") + rawtx +
-                                 " [] [] NONE|FORKID|ANYONECANPAY"));
-    BOOST_CHECK_THROW(CallRPC(std::string("signrawtransaction ") + rawtx +
-                              " null null badenum"),
-                      std::runtime_error);
 
     // Only check failure cases for sendrawtransaction, there's no network to
     // send to...
@@ -145,11 +132,11 @@ BOOST_AUTO_TEST_CASE(rpc_rawsign) {
         "\"KzsXybp9jX64P5ekX1KUxRQ79Jht9uzW7LorgwE65i5rWACL6LQe\"";
     std::string privkey2 =
         "\"Kyhdf5LuKTRx4ge69ybABsiUAWjVRK4XGxAKk2FQLp2HjGMy87Z4\"";
-    r = CallRPC(std::string("signrawtransaction ") + notsigned + " " + prevout +
-                " " + "[]");
+    r = CallRPC(std::string("signrawtransactionwithkey ") + notsigned + " [] " +
+                prevout);
     BOOST_CHECK(find_value(r.get_obj(), "complete").get_bool() == false);
-    r = CallRPC(std::string("signrawtransaction ") + notsigned + " " + prevout +
-                " " + "[" + privkey1 + "," + privkey2 + "]");
+    r = CallRPC(std::string("signrawtransactionwithkey ") + notsigned + " [" +
+                privkey1 + "," + privkey2 + "] " + prevout);
     BOOST_CHECK(find_value(r.get_obj(), "complete").get_bool() == true);
 }
 
@@ -180,8 +167,8 @@ BOOST_AUTO_TEST_CASE(rpc_rawsign_missing_amount) {
     bool exceptionThrownDueToMissingAmount = false,
          errorWasMissingAmount = false;
     try {
-        r = CallRPC(std::string("signrawtransaction ") + notsigned + " " +
-                    prevout + " " + "[" + privkey1 + "," + privkey2 + "]");
+        r = CallRPC(std::string("signrawtransactionwithkey ") + notsigned +
+                    " [" + privkey1 + "," + privkey2 + "] " + prevout);
     } catch (const std::runtime_error &e) {
         exceptionThrownDueToMissingAmount = true;
         if (std::string(e.what()).find("amount") != std::string::npos) {

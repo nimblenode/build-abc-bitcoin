@@ -2,20 +2,23 @@
 # Copyright (c) 2014-2016 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
+"""Test the REST API."""
 
-#
-# Test REST interface
-#
-
+from codecs import encode
+from decimal import Decimal
+import http.client
+from io import BytesIO
+import json
+from struct import pack, unpack
+import urllib.parse
 
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import *
-from struct import *
-from io import BytesIO
-from codecs import encode
-
-import http.client
-import urllib.parse
+from test_framework.util import (
+    assert_equal,
+    assert_greater_than,
+    connect_nodes_bi,
+    hex_str_to_bytes,
+)
 
 
 def deser_uint256(f):
@@ -56,6 +59,7 @@ class RESTTest (BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 3
+        self.extra_args = [["-rest"]] * self.num_nodes
 
     def setup_network(self, split=False):
         super().setup_network()
@@ -94,7 +98,7 @@ class RESTTest (BitcoinTestFramework):
                 n = vout['n']
 
         #
-        # GETUTXOS: query a unspent outpoint #
+        # GETUTXOS: query an unspent outpoint #
         #
         json_request = '/checkmempool/' + txid + '-' + str(n)
         json_string = http_get_call(
@@ -109,7 +113,7 @@ class RESTTest (BitcoinTestFramework):
         assert_equal(json_obj['utxos'][0]['value'], 0.1)
 
         #
-        # GETUTXOS: now query a already spent outpoint #
+        # GETUTXOS: now query an already spent outpoint #
         #
         json_request = '/checkmempool/' + vintx + '-0'
         json_string = http_get_call(
@@ -179,35 +183,35 @@ class RESTTest (BitcoinTestFramework):
         json_string = http_get_call(
             url.hostname, url.port, '/rest/getutxos' + json_request + self.FORMAT_SEPARATOR + 'json')
         json_obj = json.loads(json_string)
-        assert_equal(len(json_obj['utxos']), 0)
-        # there should be a outpoint because it has just added to
+        # there should be an outpoint because it has just added to
         # the mempool
+        assert_equal(len(json_obj['utxos']), 0)
 
         json_request = '/checkmempool/' + txid + '-' + str(n)
         json_string = http_get_call(
             url.hostname, url.port, '/rest/getutxos' + json_request + self.FORMAT_SEPARATOR + 'json')
         json_obj = json.loads(json_string)
-        assert_equal(len(json_obj['utxos']), 1)
-        # there should be a outpoint because it has just added to
+        # there should be an outpoint because it has just added to
         # the mempool
+        assert_equal(len(json_obj['utxos']), 1)
 
         # do some invalid requests
         json_request = '{"checkmempool'
         response = http_post_call(
             url.hostname, url.port, '/rest/getutxos' + self.FORMAT_SEPARATOR + 'json', json_request, True)
+        # must be a 400 because we send an invalid json request
         assert_equal(response.status, 400)
-        # must be a 400 because we send a invalid json request
 
         json_request = '{"checkmempool'
         response = http_post_call(
             url.hostname, url.port, '/rest/getutxos' + self.FORMAT_SEPARATOR + 'bin', json_request, True)
+        # must be a 400 because we send an invalid bin request
         assert_equal(response.status, 400)
-        # must be a 400 because we send a invalid bin request
 
         response = http_post_call(
             url.hostname, url.port, '/rest/getutxos/checkmempool' + self.FORMAT_SEPARATOR + 'bin', '', True)
+        # must be a 400 because we send an invalid bin request
         assert_equal(response.status, 400)
-        # must be a 400 because we send a invalid bin request
 
         # test limits
         json_request = '/checkmempool/'
@@ -357,8 +361,10 @@ class RESTTest (BitcoinTestFramework):
         json_string = http_get_call(
             url.hostname, url.port, '/rest/mempool/contents' + self.FORMAT_SEPARATOR + 'json')
         json_obj = json.loads(json_string)
-        for tx in txs:
+        for i, tx in enumerate(txs):
             assert_equal(tx in json_obj, True)
+            assert_equal(json_obj[tx]['spentby'], txs[i + 1:i + 2])
+            assert_equal(json_obj[tx]['depends'], txs[i - 1:i])
 
         # now mine the transactions
         newblockhash = self.nodes[1].generate(1)

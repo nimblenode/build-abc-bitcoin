@@ -2,20 +2,20 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "httprpc.h"
+#include <httprpc.h>
 
-#include "base58.h"
-#include "chainparams.h"
-#include "config.h"
-#include "crypto/hmac_sha256.h"
-#include "httpserver.h"
-#include "random.h"
-#include "rpc/protocol.h"
-#include "rpc/server.h"
-#include "sync.h"
-#include "ui_interface.h"
-#include "util.h"
-#include "utilstrencodings.h"
+#include <chainparams.h>
+#include <config.h>
+#include <crypto/hmac_sha256.h>
+#include <httpserver.h>
+#include <key_io.h>
+#include <random.h>
+#include <rpc/protocol.h>
+#include <rpc/server.h>
+#include <sync.h>
+#include <ui_interface.h>
+#include <util.h>
+#include <utilstrencodings.h>
 
 #include <boost/algorithm/string.hpp> // boost::trim
 
@@ -33,7 +33,7 @@ static const int64_t RPC_AUTH_BRUTE_FORCE_DELAY = 250;
  */
 class HTTPRPCTimer : public RPCTimerBase {
 public:
-    HTTPRPCTimer(struct event_base *eventBase, std::function<void(void)> &func,
+    HTTPRPCTimer(struct event_base *eventBase, std::function<void()> &func,
                  int64_t millis)
         : ev(eventBase, false, func) {
         struct timeval tv;
@@ -52,7 +52,7 @@ public:
 
     const char *Name() override { return "HTTP"; }
 
-    RPCTimerBase *NewTimer(std::function<void(void)> &func,
+    RPCTimerBase *NewTimer(std::function<void()> &func,
                            int64_t millis) override {
         return new HTTPRPCTimer(base, func, millis);
     }
@@ -393,7 +393,8 @@ bool StartHTTPRPC(Config &config,
     RegisterHTTPHandler("/wallet/", false, rpcFunction);
 #endif
     assert(EventBase());
-    httpRPCTimerInterface = MakeUnique<HTTPRPCTimerInterface>(EventBase());
+    httpRPCTimerInterface =
+        std::make_unique<HTTPRPCTimerInterface>(EventBase());
     RPCSetTimerInterface(httpRPCTimerInterface.get());
     return true;
 }

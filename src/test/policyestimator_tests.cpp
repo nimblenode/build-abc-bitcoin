@@ -2,13 +2,14 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "policy/fees.h"
-#include "policy/policy.h"
-#include "txmempool.h"
-#include "uint256.h"
-#include "util.h"
+#include <policy/fees.h>
+#include <policy/policy.h>
 
-#include "test/test_bitcoin.h"
+#include <txmempool.h>
+#include <uint256.h>
+#include <util.h>
+
+#include <test/test_bitcoin.h>
 
 #include <boost/test/unit_test.hpp>
 
@@ -54,13 +55,9 @@ BOOST_AUTO_TEST_CASE(MempoolMinimumFeeEstimate) {
         block.clear();
     }
 
-    // Check that the estimate is above the rolling minimum fee.  This should
-    // be true since we have not trimmed the mempool.
-    BOOST_CHECK(CFeeRate(Amount::zero()) == mpool.estimateFee(1));
-    BOOST_CHECK(mpool.GetMinFee(1) <= mpool.estimateFee(2));
-    BOOST_CHECK(mpool.GetMinFee(1) <= mpool.estimateFee(3));
-    BOOST_CHECK(mpool.GetMinFee(1) <= mpool.estimateFee(4));
-    BOOST_CHECK(mpool.GetMinFee(1) <= mpool.estimateFee(5));
+    // Check that the estimate is above the rolling minimum fee. This should be
+    // true since we have not trimmed the mempool.
+    BOOST_CHECK(mpool.GetMinFee(1) <= mpool.estimateFee());
 
     // Check that estimateFee returns the minimum rolling fee even when the
     // mempool grows very quickly and no blocks have been mined.
@@ -98,10 +95,8 @@ BOOST_AUTO_TEST_CASE(MempoolMinimumFeeEstimate) {
                 CFeeRate(10000 * DEFAULT_BLOCK_MIN_TX_FEE_PER_KB,
                          CTransaction(tx).GetTotalSize()));
 
-    for (int i = 1; i < 10; i++) {
-        BOOST_CHECK_MESSAGE(mpool.estimateFee(i) == mpool.GetMinFee(1),
-                            "Confirm blocks has failed on iteration " << i);
-    }
+    BOOST_CHECK_MESSAGE(mpool.estimateFee() == mpool.GetMinFee(1),
+                        "Confirm blocks has failed");
 }
 
 BOOST_AUTO_TEST_SUITE_END()

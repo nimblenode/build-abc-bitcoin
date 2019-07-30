@@ -2,15 +2,7 @@
 # Copyright (c) 2015-2016 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-
-from test_framework.mininode import *
-from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import *
-import time
-from test_framework.blocktools import create_block, create_coinbase, create_transaction
-
-'''
-AcceptBlockTest -- test processing of unrequested blocks.
+"""Test processing of unrequested blocks.
 
 Setup: two nodes, node0+node1, not connected to each other. Node1 will have
 nMinimumChainWork set to 0x10, so it won't process low-work unrequested blocks.
@@ -57,15 +49,38 @@ Node1 is unused in tests 3-7:
 
 9. Test Node1 is able to sync when connected to node0 (which should have sufficient
    work on its chain).
-'''
+"""
+
+import time
+
+from test_framework.blocktools import (
+    create_block,
+    create_coinbase,
+    create_transaction,
+)
+from test_framework.messages import (
+    CBlockHeader,
+    CInv,
+    msg_block,
+    msg_headers,
+    msg_inv,
+)
+from test_framework.mininode import (
+    mininode_lock,
+    network_thread_join,
+    network_thread_start,
+    P2PInterface,
+)
+from test_framework.test_framework import BitcoinTestFramework
+from test_framework.util import (
+    assert_equal,
+    assert_raises_rpc_error,
+    connect_nodes,
+    sync_blocks,
+)
 
 
 class AcceptBlockTest(BitcoinTestFramework):
-
-    def add_options(self, parser):
-        parser.add_argument("--testbinary", dest="testbinary",
-                            default=os.getenv("BITCOIND", "bitcoind"),
-                            help="bitcoind binary to test")
 
     def set_test_params(self):
         self.setup_clean_chain = True
@@ -338,9 +353,7 @@ class AcceptBlockTest(BitcoinTestFramework):
         headers_message = msg_headers()
         headers_message.headers.append(CBlockHeader(block_293))
         test_node.send_message(headers_message)
-        # FIXME: Uncomment this line once Core backport 015a525 is completed.
-        # Current behavior does not ban peers that give us headers on invalid chains.
-        # test_node.wait_for_disconnect()
+        test_node.wait_for_disconnect()
 
         # 9. Connect node1 to node0 and ensure it is able to sync
         connect_nodes(self.nodes[0], self.nodes[1])

@@ -2,14 +2,15 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "test/test_bitcoin.h"
-#include "util.h"
+#include <util.h>
 
-#include <string>
-#include <vector>
+#include <test/test_bitcoin.h>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/test/unit_test.hpp>
+
+#include <string>
+#include <vector>
 
 BOOST_FIXTURE_TEST_SUITE(getarg_tests, BasicTestingSetup)
 
@@ -28,10 +29,19 @@ static void ResetArgs(const std::string &strArg) {
         vecChar.push_back(s.c_str());
     }
 
-    gArgs.ParseParameters(vecChar.size(), &vecChar[0]);
+    std::string error;
+    gArgs.ParseParameters(vecChar.size(), vecChar.data(), error);
+}
+
+static void SetupArgs(const std::vector<std::string> &args) {
+    gArgs.ClearArgs();
+    for (const std::string &arg : args) {
+        gArgs.AddArg(arg, "", false, OptionsCategory::OPTIONS);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(boolarg) {
+    SetupArgs({"-foo"});
     ResetArgs("-foo");
     BOOST_CHECK(gArgs.GetBoolArg("-foo", false));
     BOOST_CHECK(gArgs.GetBoolArg("-foo", true));
@@ -85,6 +95,7 @@ BOOST_AUTO_TEST_CASE(boolarg) {
 }
 
 BOOST_AUTO_TEST_CASE(stringarg) {
+    SetupArgs({"-foo", "-bar"});
     ResetArgs("");
     BOOST_CHECK_EQUAL(gArgs.GetArg("-foo", ""), "");
     BOOST_CHECK_EQUAL(gArgs.GetArg("-foo", "eleven"), "eleven");
@@ -107,6 +118,7 @@ BOOST_AUTO_TEST_CASE(stringarg) {
 }
 
 BOOST_AUTO_TEST_CASE(intarg) {
+    SetupArgs({"-foo", "-bar"});
     ResetArgs("");
     BOOST_CHECK_EQUAL(gArgs.GetArg("-foo", 11), 11);
     BOOST_CHECK_EQUAL(gArgs.GetArg("-foo", 0), 0);
@@ -125,6 +137,7 @@ BOOST_AUTO_TEST_CASE(intarg) {
 }
 
 BOOST_AUTO_TEST_CASE(doubledash) {
+    SetupArgs({"-foo", "-bar"});
     ResetArgs("--foo");
     BOOST_CHECK_EQUAL(gArgs.GetBoolArg("-foo", false), true);
 
@@ -134,6 +147,7 @@ BOOST_AUTO_TEST_CASE(doubledash) {
 }
 
 BOOST_AUTO_TEST_CASE(boolargno) {
+    SetupArgs({"-foo", "-bar"});
     ResetArgs("-nofoo");
     BOOST_CHECK(!gArgs.GetBoolArg("-foo", true));
     BOOST_CHECK(!gArgs.GetBoolArg("-foo", false));

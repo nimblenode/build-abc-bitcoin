@@ -2,17 +2,18 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "tx_verify.h"
+#include <consensus/tx_verify.h>
 
-#include "chain.h"
-#include "coins.h"
-#include "consensus/activation.h"
-#include "consensus/consensus.h"
-#include "consensus/validation.h"
-#include "primitives/transaction.h"
-#include "script/script_flags.h"
-#include "utilmoneystr.h" // For FormatMoney
-#include "version.h"      // For PROTOCOL_VERSION
+#include <amount.h>
+#include <chain.h>
+#include <coins.h>
+#include <consensus/activation.h>
+#include <consensus/consensus.h>
+#include <consensus/validation.h>
+#include <primitives/transaction.h>
+#include <script/script_flags.h>
+#include <utilmoneystr.h> // For FormatMoney
+#include <version.h>      // For PROTOCOL_VERSION
 
 static bool IsFinalTx(const CTransaction &tx, int nBlockHeight,
                       int64_t nBlockTime) {
@@ -221,7 +222,7 @@ static bool CheckTransactionCommon(const CTransaction &tx,
         }
     }
 
-    if (GetSigOpCountWithoutP2SH(tx, SCRIPT_ENABLE_CHECKDATASIG) >
+    if (GetSigOpCountWithoutP2SH(tx, SCRIPT_VERIFY_CHECKDATASIG_SIGOPS) >
         MAX_TX_SIGOPS_COUNT) {
         return state.DoS(100, false, REJECT_INVALID, "bad-txn-sigops");
     }
@@ -276,15 +277,16 @@ bool CheckRegularTransaction(const CTransaction &tx, CValidationState &state) {
 
 namespace Consensus {
 bool CheckTxInputs(const CTransaction &tx, CValidationState &state,
-                   const CCoinsViewCache &inputs, int nSpendHeight) {
-    // This doesn't trigger the DoS code on purpose; if it did, it would make it
-    // easier for an attacker to attempt to split the network.
+                   const CCoinsViewCache &inputs, int nSpendHeight,
+                   Amount &txfee) {
+    // are the actual inputs available?
     if (!inputs.HaveInputs(tx)) {
-        return state.Invalid(false, 0, "", "Inputs unavailable");
+        return state.DoS(100, false, REJECT_INVALID,
+                         "bad-txns-inputs-missingorspent", false,
+                         strprintf("%s: inputs missing/spent", __func__));
     }
 
     Amount nValueIn = Amount::zero();
-    Amount nFees = Amount::zero();
     for (const auto &in : tx.vin) {
         const COutPoint &prevout = in.prevout;
         const Coin &coin = inputs.AccessCoin(prevout);
@@ -309,24 +311,21 @@ bool CheckTxInputs(const CTransaction &tx, CValidationState &state,
         }
     }
 
-    if (nValueIn < tx.GetValueOut()) {
+    const Amount value_out = tx.GetValueOut();
+    if (nValueIn < value_out) {
         return state.DoS(
             100, false, REJECT_INVALID, "bad-txns-in-belowout", false,
             strprintf("value in (%s) < value out (%s)", FormatMoney(nValueIn),
-                      FormatMoney(tx.GetValueOut())));
+                      FormatMoney(value_out)));
     }
 
     // Tally transaction fees
-    Amount nTxFee = nValueIn - tx.GetValueOut();
-    if (nTxFee < Amount::zero()) {
-        return state.DoS(100, false, REJECT_INVALID, "bad-txns-fee-negative");
-    }
-
-    nFees += nTxFee;
-    if (!MoneyRange(nFees)) {
+    const Amount txfee_aux = nValueIn - value_out;
+    if (!MoneyRange(txfee_aux)) {
         return state.DoS(100, false, REJECT_INVALID, "bad-txns-fee-outofrange");
     }
 
+    txfee = txfee_aux;
     return true;
 }
 } // namespace Consensus

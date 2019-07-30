@@ -6,10 +6,10 @@
 #define BITCOIN_QT_BITCOINGUI_H
 
 #if defined(HAVE_CONFIG_H)
-#include "config/bitcoin-config.h"
+#include <config/bitcoin-config.h>
 #endif
 
-#include "amount.h"
+#include <amount.h>
 
 #include <QLabel>
 #include <QMainWindow>
@@ -17,6 +17,8 @@
 #include <QMenu>
 #include <QPoint>
 #include <QSystemTrayIcon>
+
+#include <memory>
 
 class ClientModel;
 class NetworkStyle;
@@ -32,7 +34,11 @@ class HelpMessageDialog;
 class ModalOverlay;
 
 class Config;
-class CWallet;
+
+namespace interfaces {
+class Handler;
+class Node;
+} // namespace interfaces
 
 QT_BEGIN_NAMESPACE
 class QAction;
@@ -52,7 +58,8 @@ class BitcoinGUI : public QMainWindow {
 public:
     static const std::string DEFAULT_UIPLATFORM;
 
-    explicit BitcoinGUI(const Config *, const PlatformStyle *platformStyle,
+    explicit BitcoinGUI(interfaces::Node &node, const Config *,
+                        const PlatformStyle *platformStyle,
                         const NetworkStyle *networkStyle, QWidget *parent = 0);
     ~BitcoinGUI();
 
@@ -83,6 +90,9 @@ protected:
     bool eventFilter(QObject *object, QEvent *event) override;
 
 private:
+    interfaces::Node &m_node;
+    std::unique_ptr<interfaces::Handler> m_handler_message_box;
+    std::unique_ptr<interfaces::Handler> m_handler_question;
     ClientModel *clientModel = nullptr;
     WalletFrame *walletFrame = nullptr;
 

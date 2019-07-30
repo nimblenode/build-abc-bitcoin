@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright (c) 2014 Wladimir J. van der Laan
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
@@ -15,7 +15,6 @@ It will do the following automatically:
 TODO:
 - auto-add new translations to the build system according to the translation process
 '''
-from __future__ import division, print_function
 import subprocess
 import re
 import sys
@@ -95,7 +94,7 @@ def check_format_specifiers(source, translation, errors, numerus):
         translation_f = split_format_specifiers(
             find_format_specifiers(translation))
     except IndexError:
-        errors.append("Parse error in translation for '%s': '%s'" % (
+        errors.append("Parse error in translation for '{}': '{}'".format(
             sanitize_string(source), sanitize_string(translation)))
         return False
     else:
@@ -103,7 +102,7 @@ def check_format_specifiers(source, translation, errors, numerus):
             if numerus and source_f == (set(), ['n']) and translation_f == (set(), []) and translation.find('%') == -1:
                 # Allow numerus translations to omit %n specifier (usually when it only has one possible value)
                 return True
-            errors.append("Mismatch between '%s' and '%s'" % (
+            errors.append("Mismatch between '{}' and '{}'".format(
                 sanitize_string(source), sanitize_string(translation)))
             return False
     return True
@@ -184,7 +183,7 @@ def postprocess_translations(reduce_diff_hacks=False):
                         source, translation, errors, numerus)
 
                     for error in errors:
-                        print('%s: %s' % (filename, error))
+                        print('{}: {}'.format(filename, error))
 
                     if not valid:  # set type to unfinished and clear string if invalid
                         translation_node.clear()
@@ -205,8 +204,8 @@ def postprocess_translations(reduce_diff_hacks=False):
             for message in context.findall('message'):
                 num_messages += 1
         if num_messages < MIN_NUM_MESSAGES:
-            print('Removing %s, as it contains only %i messages' %
-                  (filepath, num_messages))
+            print('Removing {}, as it contains only {} messages'.format(
+                filepath, num_messages))
             continue
 
         # write fixed-up tree

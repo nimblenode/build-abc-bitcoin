@@ -2,21 +2,26 @@
 # Copyright (c) 2014-2016 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
+"""Test the pruning code.
 
-#
-# Test pruning code
-# ********
-# WARNING:
-# This test uses 4GB of disk space.
-# This test takes 30 mins or more (up to 2 hours)
-# ********
-
-from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import *
-from test_framework.blocktools import mine_big_block
+WARNING:
+This test uses 4GB of disk space.
+This test takes 30 mins or more (up to 2 hours)
+"""
 
 import time
 import os
+
+from test_framework.blocktools import mine_big_block
+from test_framework.test_framework import BitcoinTestFramework
+from test_framework.util import (
+    assert_equal,
+    assert_greater_than,
+    assert_raises_rpc_error,
+    connect_nodes,
+    sync_blocks,
+)
+
 
 MIN_BLOCKS_TO_KEEP = 288
 
@@ -56,7 +61,8 @@ class PruneTest(BitcoinTestFramework):
     def setup_network(self):
         self.setup_nodes()
 
-        self.prunedir = self.options.tmpdir + "/node2/regtest/blocks/"
+        self.prunedir = os.path.join(
+            self.nodes[2].datadir, 'regtest', 'blocks', '')
 
         connect_nodes(self.nodes[0], self.nodes[1])
         connect_nodes(self.nodes[1], self.nodes[2])
@@ -152,7 +158,7 @@ class PruneTest(BitcoinTestFramework):
         self.stop_node(1)
         self.start_node(1, extra_args=[
                         "-maxreceivebuffer=20000", "-blockmaxsize=5000", "-checkblocks=5",
-                        "-disablesafemode", "-noparkdeepreorg", "-maxreorgdepth=-1"])
+                        "-noparkdeepreorg", "-maxreorgdepth=-1"])
 
         height = self.nodes[1].getblockcount()
         self.log.info("Current block height: {}".format(height))
@@ -163,7 +169,7 @@ class PruneTest(BitcoinTestFramework):
                       badhash, invalidheight))
         self.nodes[1].invalidateblock(badhash)
 
-        # We've now switched to our previously mined-24 block fork on node 1, but thats not what we want.
+        # We've now switched to our previously mined-24 block fork on node 1, but that's not what we want.
         # So invalidate that fork as well, until we're on the same chain as
         # node 0/2 (but at an ancestor 288 blocks ago)
         mainchainhash = self.nodes[0].getblockhash(invalidheight - 1)
@@ -180,7 +186,7 @@ class PruneTest(BitcoinTestFramework):
         self.stop_node(1)
         self.start_node(1, extra_args=[
                         "-maxreceivebuffer=20000", "-blockmaxsize=5000", "-checkblocks=5",
-                        "-disablesafemode", "-noparkdeepreorg", "-maxreorgdepth=-1"])
+                        "-noparkdeepreorg", "-maxreorgdepth=-1"])
 
         self.log.info("Generating new longer chain of 300 more blocks")
         self.nodes[1].generate(300)
@@ -237,7 +243,7 @@ class PruneTest(BitcoinTestFramework):
 
         # As of 0.10 the current block download logic is not able to reorg to
         # the original chain created in create_chain_with_stale_blocks because
-        # it doesn't know of any peer thats on that chain from which to
+        # it doesn't know of any peer that's on that chain from which to
         # redownload its missing blocks. Invalidate the reorg_test chain in
         # node 0 as well, it can successfully switch to the original chain
         # because it has all the block data. However it must mine enough blocks
@@ -378,7 +384,7 @@ class PruneTest(BitcoinTestFramework):
             2, extra_args=["-prune=550", "-noparkdeepreorg", "-maxreorgdepth=-1"])
         self.log.info("Success")
 
-        # check that wallet loads loads successfully when restarting a pruned node after IBD.
+        # check that wallet loads successfully when restarting a pruned node after IBD.
         # this was reported to fail in #7494.
         self.log.info("Syncing node 5 to test wallet")
         connect_nodes(self.nodes[0], self.nodes[5])

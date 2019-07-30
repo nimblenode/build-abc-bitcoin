@@ -11,7 +11,7 @@
 
 /**
  * GetTimeMicros() and GetTimeMillis() both return the system time, but in
- * different units. GetTime() returns the sytem time in seconds, but also
+ * different units. GetTime() returns the system time in seconds, but also
  * supports mocktime, where the time can be specified by the user, eg for
  * testing (eg with the setmocktime rpc, or -mocktime argument).
  *
@@ -32,8 +32,6 @@ void MilliSleep(int64_t n);
  * ISO 8601 formatting is preferred. Use the FormatISO8601{DateTime,Date,Time}
  * helper functions if possible.
  */
-std::string DateTimeStrFormat(const char *pszFormat, int64_t nTime);
-
 std::string FormatISO8601DateTime(int64_t nTime);
 std::string FormatISO8601Date(int64_t nTime);
 std::string FormatISO8601Time(int64_t nTime);

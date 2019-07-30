@@ -6,12 +6,12 @@
 #ifndef BITCOIN_COINS_H
 #define BITCOIN_COINS_H
 
-#include "compressor.h"
-#include "core_memusage.h"
-#include "hash.h"
-#include "memusage.h"
-#include "serialize.h"
-#include "uint256.h"
+#include <compressor.h>
+#include <core_memusage.h>
+#include <crypto/siphash.h>
+#include <memusage.h>
+#include <serialize.h>
+#include <uint256.h>
 
 #include <cassert>
 #include <cstdint>
@@ -61,7 +61,7 @@ public:
 
     template <typename Stream> void Unserialize(Stream &s) {
         ::Unserialize(s, VARINT(nHeightAndIsCoinBase));
-        ::Unserialize(s, REF(CTxOutCompressor(out)));
+        ::Unserialize(s, CTxOutCompressor(out));
     }
 
     size_t DynamicMemoryUsage() const {
@@ -138,11 +138,14 @@ private:
 /** Abstract view on the open txout dataset. */
 class CCoinsView {
 public:
-    //! Retrieve the Coin (unspent transaction output) for a given outpoint.
+    /**
+     * Retrieve the Coin (unspent transaction output) for a given outpoint.
+     * Returns true only when an unspent coin was found, which is returned in
+     * coin. When false is returned, coin's value is unspecified.
+     */
     virtual bool GetCoin(const COutPoint &outpoint, Coin &coin) const;
 
-    //! Just check whether we have data for a given outpoint.
-    //! This may (but cannot always) return true for spent outputs.
+    //! Just check whether a given outpoint is unspent.
     virtual bool HaveCoin(const COutPoint &outpoint) const;
 
     //! Retrieve the block hash whose state this CCoinsView currently represents
@@ -203,6 +206,12 @@ protected:
 
 public:
     CCoinsViewCache(CCoinsView *baseIn);
+
+    /**
+     * By deleting the copy constructor, we prevent accidentally using it when
+     * one intends to create a cache on top of a base cache.
+     */
+    CCoinsViewCache(const CCoinsViewCache &) = delete;
 
     // Standard CCoinsView methods
     bool GetCoin(const COutPoint &outpoint, Coin &coin) const override;
@@ -289,12 +298,6 @@ public:
 
 private:
     CCoinsMap::iterator FetchCoin(const COutPoint &outpoint) const;
-
-    /**
-     * By making the copy constructor private, we prevent accidentally using it
-     * when one intends to create a cache on top of a base cache.
-     */
-    CCoinsViewCache(const CCoinsViewCache &);
 };
 
 //! Utility function to add all of a transaction's outputs to a cache.

@@ -8,6 +8,7 @@ from base64 import b64encode
 from binascii import hexlify, unhexlify
 from decimal import Decimal, ROUND_DOWN
 import hashlib
+import inspect
 import json
 import logging
 import os
@@ -34,29 +35,29 @@ def assert_fee_amount(fee, tx_size, fee_per_kB, wiggleroom=2):
     during fee calculation, or due to the wallet funding transactions using the
     ceiling of the calculated fee.
     """
-    target_fee = tx_size * fee_per_kB / 1000
+    target_fee = round(tx_size * fee_per_kB / 1000, 8)
     if fee < (tx_size - wiggleroom) * fee_per_kB / 1000:
         raise AssertionError(
-            "Fee of %s BTC too low! (Should be %s BTC)" % (str(fee), str(target_fee)))
+            "Fee of {} BCH too low! (Should be {} BCH)".format(str(fee), str(target_fee)))
     if fee > (tx_size + wiggleroom) * fee_per_kB / 1000:
         raise AssertionError(
-            "Fee of %s BTC too high! (Should be %s BTC)" % (str(fee), str(target_fee)))
+            "Fee of {} BCH too high! (Should be {} BCH)".format(str(fee), str(target_fee)))
 
 
 def assert_equal(thing1, thing2, *args):
     if thing1 != thing2 or any(thing1 != arg for arg in args):
-        raise AssertionError("not(%s)" % " == ".join(str(arg)
-                                                     for arg in (thing1, thing2) + args))
+        raise AssertionError("not({})".format(" == ".join(str(arg)
+                                                          for arg in (thing1, thing2) + args)))
 
 
 def assert_greater_than(thing1, thing2):
     if thing1 <= thing2:
-        raise AssertionError("%s <= %s" % (str(thing1), str(thing2)))
+        raise AssertionError("{} <= {}".format(str(thing1), str(thing2)))
 
 
 def assert_greater_than_or_equal(thing1, thing2):
     if thing1 < thing2:
-        raise AssertionError("%s < %s" % (str(thing1), str(thing2)))
+        raise AssertionError("{} < {}".format(str(thing1), str(thing2)))
 
 
 def assert_raises(exc, fun, *args, **kwds):
@@ -98,7 +99,8 @@ def assert_raises_process_error(returncode, output, fun, *args, **kwds):
         fun(*args, **kwds)
     except CalledProcessError as e:
         if returncode != e.returncode:
-            raise AssertionError("Unexpected returncode %i" % e.returncode)
+            raise AssertionError(
+                "Unexpected returncode {}".format(e.returncode))
         if output not in e.output:
             raise AssertionError("Expected substring not found:" + e.output)
     else:
@@ -135,7 +137,7 @@ def try_rpc(code, message, fun, *args, **kwds):
         # JSONRPCException was thrown as expected. Check the code and message values are correct.
         if (code is not None) and (code != e.error["code"]):
             raise AssertionError(
-                "Unexpected JSONRPC error code %i" % e.error["code"])
+                "Unexpected JSONRPC error code {}".format(e.error["code"]))
         if (message is not None) and (message not in e.error['message']):
             raise AssertionError(
                 "Expected substring not found:" + e.error['message'])
@@ -152,18 +154,19 @@ def assert_is_hex_string(string):
         int(string, 16)
     except Exception as e:
         raise AssertionError(
-            "Couldn't interpret %r as hexadecimal; raised: %s" % (string, e))
+            "Couldn't interpret {!r} as hexadecimal; raised: {}".format(string, e))
 
 
 def assert_is_hash_string(string, length=64):
     if not isinstance(string, str):
-        raise AssertionError("Expected a string, got type %r" % type(string))
+        raise AssertionError(
+            "Expected a string, got type {!r}".format(type(string)))
     elif length and len(string) != length:
         raise AssertionError(
-            "String of length %d expected; got %d" % (length, len(string)))
+            "String of length {} expected; got {}".format(length, len(string)))
     elif not re.match('[abcdef0-9]+$', string):
         raise AssertionError(
-            "String %r contains invalid characters for a hash." % string)
+            "String {!r} contains invalid characters for a hash.".format(string))
 
 
 def assert_array_result(object_array, to_match, expected, should_not_find=False):
@@ -188,20 +191,20 @@ def assert_array_result(object_array, to_match, expected, should_not_find=False)
             num_matched = num_matched + 1
         for key, value in expected.items():
             if item[key] != value:
-                raise AssertionError("%s : expected %s=%s" %
-                                     (str(item), str(key), str(value)))
+                raise AssertionError("{} : expected {}={}".format(
+                    str(item), str(key), str(value)))
             num_matched = num_matched + 1
     if num_matched == 0 and not should_not_find:
-        raise AssertionError("No objects matched %s" % (str(to_match)))
+        raise AssertionError("No objects matched {}".format(str(to_match)))
     if num_matched > 0 and should_not_find:
-        raise AssertionError("Objects were found %s" % (str(to_match)))
+        raise AssertionError("Objects were found {}".format(str(to_match)))
 
 # Utility functions
 ###################
 
 
 def check_json_precision():
-    """Make sure json library being used does not lose precision converting BTC values"""
+    """Make sure json library being used does not lose precision converting BCH values"""
     n = Decimal("20000000.00000003")
     satoshis = int(json.loads(json.dumps(float(n))) * 1.0e8)
     if satoshis != 2000000000000003:
@@ -240,9 +243,9 @@ def wait_until(predicate, *, attempts=float('inf'), timeout=float('inf'), lock=N
     if attempts == float('inf') and timeout == float('inf'):
         timeout = 60
     attempt = 0
-    timeout += time.time()
+    time_end = time.time() + timeout
 
-    while attempt < attempts and time.time() < timeout:
+    while attempt < attempts and time.time() < time_end:
         if lock:
             with lock:
                 if predicate():
@@ -254,8 +257,14 @@ def wait_until(predicate, *, attempts=float('inf'), timeout=float('inf'), lock=N
         time.sleep(0.05)
 
     # Print the cause of the timeout
-    assert_greater_than(attempts, attempt)
-    assert_greater_than(timeout, time.time())
+    predicate_source = inspect.getsourcelines(predicate)
+    logger.error("wait_until() failed. Predicate: {}".format(predicate_source))
+    if attempt >= attempts:
+        raise AssertionError("Predicate {} not true after {} attempts".format(
+            predicate_source, attempts))
+    elif time.time() >= time_end:
+        raise AssertionError(
+            "Predicate {} not true after {} seconds".format(predicate_source, timeout))
     raise RuntimeError('Unreachable')
 
 # RPC/P2P connection constants and functions
@@ -314,14 +323,14 @@ def rpc_url(datadir, host, port):
     rpc_u, rpc_p = get_auth_cookie(datadir)
     if host == None:
         host = '127.0.0.1'
-    return "http://%s:%s@%s:%d" % (rpc_u, rpc_p, host, int(port))
+    return "http://{}:{}@{}:{}".format(rpc_u, rpc_p, host, int(port))
 
 # Node functions
 ################
 
 
 def initialize_datadir(dirname, n):
-    datadir = os.path.join(dirname, "node" + str(n))
+    datadir = get_datadir_path(dirname, n)
     if not os.path.isdir(datadir):
         os.makedirs(datadir)
     with open(os.path.join(datadir, "bitcoin.conf"), 'w', encoding='utf8') as f:
@@ -329,13 +338,24 @@ def initialize_datadir(dirname, n):
         f.write("[regtest]\n")
         f.write("port=" + str(p2p_port(n)) + "\n")
         f.write("rpcport=" + str(rpc_port(n)) + "\n")
+        f.write("server=1\n")
+        f.write("keypool=1\n")
+        f.write("discover=0\n")
         f.write("listenonion=0\n")
         f.write("usecashaddr=1\n")
+        os.makedirs(os.path.join(datadir, 'stderr'), exist_ok=True)
+        os.makedirs(os.path.join(datadir, 'stdout'), exist_ok=True)
     return datadir
 
 
 def get_datadir_path(dirname, n):
     return os.path.join(dirname, "node" + str(n))
+
+
+def append_config(datadir, options):
+    with open(os.path.join(datadir, "bitcoin.conf"), 'a', encoding='utf8') as f:
+        for option in options:
+            f.write(option + "\n")
 
 
 def get_auth_cookie(datadir):
@@ -361,13 +381,11 @@ def get_auth_cookie(datadir):
     return user, password
 
 
-def log_filename(dirname, n_node, logname):
-    return os.path.join(dirname, "node" + str(n_node), "regtest", logname)
-
-
-def get_bip9_status(node, key):
-    info = node.getblockchaininfo()
-    return info['bip9_softforks'][key]
+# If a cookie file exists in the given datadir, delete it.
+def delete_cookie_file(datadir):
+    if os.path.isfile(os.path.join(datadir, "regtest", ".cookie")):
+        logger.debug("Deleting leftover cookie file")
+        os.remove(os.path.join(datadir, "regtest", ".cookie"))
 
 
 def set_node_times(nodes, t):
@@ -412,54 +430,32 @@ def sync_blocks(rpc_connections, *, wait=1, timeout=60):
     one node already synced to the latest, stable tip, otherwise there's a
     chance it might return before all nodes are stably synced.
     """
-    # Use getblockcount() instead of waitforblockheight() to determine the
-    # initial max height because the two RPCs look at different internal global
-    # variables (chainActive vs latestBlock) and the former gets updated
-    # earlier.
-    maxheight = max(x.getblockcount() for x in rpc_connections)
-    start_time = cur_time = time.time()
-    while cur_time <= start_time + timeout:
-        tips = [r.waitforblockheight(maxheight, int(wait * 1000))
-                for r in rpc_connections]
-        if all(t["height"] == maxheight for t in tips):
-            if all(t["hash"] == tips[0]["hash"] for t in tips):
-                return
-            raise AssertionError("Block sync failed, mismatched block hashes:{}".format(
-                                 "".join("\n  {!r}".format(tip) for tip in tips)))
-        cur_time = time.time()
-    raise AssertionError("Block sync to height {} timed out:{}".format(
-                         maxheight, "".join("\n  {!r}".format(tip) for tip in tips)))
-
-
-def sync_chain(rpc_connections, *, wait=1, timeout=60):
-    """
-    Wait until everybody has the same best block
-    """
-    while timeout > 0:
+    stop_time = time.time() + timeout
+    while time.time() <= stop_time:
         best_hash = [x.getbestblockhash() for x in rpc_connections]
-        if best_hash == [best_hash[0]] * len(best_hash):
+        if best_hash.count(best_hash[0]) == len(rpc_connections):
             return
         time.sleep(wait)
-        timeout -= wait
-    raise AssertionError("Chain sync failed: Best block hashes don't match")
+    raise AssertionError("Block sync timed out:{}".format(
+        "".join("\n  {!r}".format(b) for b in best_hash)))
 
 
-def sync_mempools(rpc_connections, *, wait=1, timeout=60):
+def sync_mempools(rpc_connections, *, wait=1, timeout=60, flush_scheduler=True):
     """
     Wait until everybody has the same transactions in their memory
     pools
     """
-    while timeout > 0:
-        pool = set(rpc_connections[0].getrawmempool())
-        num_match = 1
-        for i in range(1, len(rpc_connections)):
-            if set(rpc_connections[i].getrawmempool()) == pool:
-                num_match = num_match + 1
-        if num_match == len(rpc_connections):
+    stop_time = time.time() + timeout
+    while time.time() <= stop_time:
+        pool = [set(r.getrawmempool()) for r in rpc_connections]
+        if pool.count(pool[0]) == len(rpc_connections):
+            if flush_scheduler:
+                for r in rpc_connections:
+                    r.syncwithvalidationinterfacequeue()
             return
         time.sleep(wait)
-        timeout -= wait
-    raise AssertionError("Mempool sync failed")
+    raise AssertionError("Mempool sync timed out:{}".format(
+        "".join("\n  {!r}".format(m) for m in pool)))
 
 # Transaction/Block functions
 #############################
@@ -474,8 +470,8 @@ def find_output(node, txid, amount):
     for i in range(len(txdata["vout"])):
         if txdata["vout"][i]["value"] == amount:
             return i
-    raise RuntimeError("find_output txid %s : %s not found" %
-                       (txid, str(amount)))
+    raise RuntimeError("find_output txid {} : {} not found".format(
+        txid, str(amount)))
 
 
 def gather_inputs(from_node, amount_needed, confirmations_required=1):
@@ -493,8 +489,8 @@ def gather_inputs(from_node, amount_needed, confirmations_required=1):
         inputs.append(
             {"txid": t["txid"], "vout": t["vout"], "address": t["address"]})
     if total_in < amount_needed:
-        raise RuntimeError("Insufficient funds: need %d, have %d" %
-                           (amount_needed, total_in))
+        raise RuntimeError("Insufficient funds: need {}, have {}".format(
+            amount_needed, total_in))
     return (total_in, inputs)
 
 
@@ -532,7 +528,7 @@ def send_zeropri_transaction(from_node, to_node, amount, fee):
     outputs[self_address] = float(amount + fee)
 
     self_rawtx = from_node.createrawtransaction(inputs, outputs)
-    self_signresult = from_node.signrawtransaction(self_rawtx)
+    self_signresult = from_node.signrawtransactionwithwallet(self_rawtx)
     self_txid = from_node.sendrawtransaction(self_signresult["hex"], True)
 
     vout = find_output(from_node, self_txid, amount + fee)
@@ -542,7 +538,7 @@ def send_zeropri_transaction(from_node, to_node, amount, fee):
     outputs = {to_node.getnewaddress(): float(amount)}
 
     rawtx = from_node.createrawtransaction(inputs, outputs)
-    signresult = from_node.signrawtransaction(rawtx)
+    signresult = from_node.signrawtransactionwithwallet(rawtx)
     txid = from_node.sendrawtransaction(signresult["hex"], True)
 
     return (txid, signresult["hex"])
@@ -574,7 +570,7 @@ def random_transaction(nodes, amount, min_fee, fee_increment, fee_variants):
     outputs[to_node.getnewaddress()] = float(amount)
 
     rawtx = from_node.createrawtransaction(inputs, outputs)
-    signresult = from_node.signrawtransaction(rawtx)
+    signresult = from_node.signrawtransactionwithwallet(rawtx)
     txid = from_node.sendrawtransaction(signresult["hex"], True)
 
     return (txid, signresult["hex"], fee)
@@ -607,7 +603,7 @@ def create_tx(node, coinbase, to_address, amount):
     inputs = [{"txid": coinbase, "vout": 0}]
     outputs = {to_address: amount}
     rawtx = node.createrawtransaction(inputs, outputs)
-    signresult = node.signrawtransaction(rawtx)
+    signresult = node.signrawtransactionwithwallet(rawtx)
     assert_equal(signresult["complete"], True)
     return signresult["hex"]
 
@@ -628,7 +624,8 @@ def create_lots_of_big_transactions(node, txouts, utxos, num, fee):
         newtx = rawtx[0:92]
         newtx = newtx + txouts
         newtx = newtx + rawtx[94:]
-        signresult = node.signrawtransaction(newtx, None, None, "NONE|FORKID")
+        signresult = node.signrawtransactionwithwallet(
+            newtx, None, "NONE|FORKID")
         txid = node.sendrawtransaction(signresult["hex"], True)
         txids.append(txid)
     return txids

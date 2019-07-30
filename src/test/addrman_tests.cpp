@@ -1,20 +1,30 @@
 // Copyright (c) 2012-2016 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#include "addrman.h"
-#include "test/test_bitcoin.h"
-#include <boost/test/unit_test.hpp>
-#include <string>
+#include <addrman.h>
 
-#include "hash.h"
-#include "netbase.h"
-#include "random.h"
+#include <hash.h>
+#include <netbase.h>
+#include <random.h>
+
+#include <test/test_bitcoin.h>
+
+#include <boost/test/unit_test.hpp>
+
+#include <string>
 
 class CAddrManTest : public CAddrMan {
     uint64_t state;
 
 public:
-    CAddrManTest() { state = 1; }
+    CAddrManTest(bool makeDeterministic = true) {
+        state = 1;
+
+        if (makeDeterministic) {
+            // Set addrman addr placement to be deterministic.
+            MakeDeterministic();
+        }
+    }
 
     //! Ensure that bucket placement is always the same for testing purposes.
     void MakeDeterministic() {
@@ -22,25 +32,26 @@ public:
         insecure_rand = FastRandomContext(true);
     }
 
-    int RandomInt(int nMax) override {
-        state = (CHashWriter(SER_GETHASH, 0) << state).GetHash().GetCheapHash();
-        return (unsigned int)(state % nMax);
-    }
-
     CAddrInfo *Find(const CNetAddr &addr, int *pnId = nullptr) {
+        LOCK(cs);
         return CAddrMan::Find(addr, pnId);
     }
 
     CAddrInfo *Create(const CAddress &addr, const CNetAddr &addrSource,
                       int *pnId = nullptr) {
+        LOCK(cs);
         return CAddrMan::Create(addr, addrSource, pnId);
     }
 
-    void Delete(int nId) { CAddrMan::Delete(nId); }
+    void Delete(int nId) {
+        LOCK(cs);
+        CAddrMan::Delete(nId);
+    }
 
     // Simulates connection failure so that we can test eviction of offline
     // nodes
     void SimConnFail(CService &addr) {
+        LOCK(cs);
         int64_t nLastSuccess = 1;
         // Set last good connection in the deep past.
         Good_(addr, true, nLastSuccess);
@@ -77,9 +88,6 @@ BOOST_FIXTURE_TEST_SUITE(addrman_tests, BasicTestingSetup)
 
 BOOST_AUTO_TEST_CASE(addrman_simple) {
     CAddrManTest addrman;
-
-    // Set addrman addr placement to be deterministic.
-    addrman.MakeDeterministic();
 
     CNetAddr source = ResolveIP("252.2.2.2");
 
@@ -127,9 +135,6 @@ BOOST_AUTO_TEST_CASE(addrman_simple) {
 BOOST_AUTO_TEST_CASE(addrman_ports) {
     CAddrManTest addrman;
 
-    // Set addrman addr placement to be deterministic.
-    addrman.MakeDeterministic();
-
     CNetAddr source = ResolveIP("252.2.2.2");
 
     BOOST_CHECK_EQUAL(addrman.size(), 0);
@@ -156,9 +161,6 @@ BOOST_AUTO_TEST_CASE(addrman_ports) {
 
 BOOST_AUTO_TEST_CASE(addrman_select) {
     CAddrManTest addrman;
-
-    // Set addrman addr placement to be deterministic.
-    addrman.MakeDeterministic();
 
     CNetAddr source = ResolveIP("252.2.2.2");
 
@@ -217,9 +219,6 @@ BOOST_AUTO_TEST_CASE(addrman_select) {
 BOOST_AUTO_TEST_CASE(addrman_new_collisions) {
     CAddrManTest addrman;
 
-    // Set addrman addr placement to be deterministic.
-    addrman.MakeDeterministic();
-
     CNetAddr source = ResolveIP("252.2.2.2");
 
     BOOST_CHECK_EQUAL(addrman.size(), 0);
@@ -244,9 +243,6 @@ BOOST_AUTO_TEST_CASE(addrman_new_collisions) {
 
 BOOST_AUTO_TEST_CASE(addrman_tried_collisions) {
     CAddrManTest addrman;
-
-    // Set addrman addr placement to be deterministic.
-    addrman.MakeDeterministic();
 
     CNetAddr source = ResolveIP("252.2.2.2");
 
@@ -273,9 +269,6 @@ BOOST_AUTO_TEST_CASE(addrman_tried_collisions) {
 
 BOOST_AUTO_TEST_CASE(addrman_find) {
     CAddrManTest addrman;
-
-    // Set addrman addr placement to be deterministic.
-    addrman.MakeDeterministic();
 
     BOOST_CHECK_EQUAL(addrman.size(), 0);
 
@@ -309,9 +302,6 @@ BOOST_AUTO_TEST_CASE(addrman_find) {
 BOOST_AUTO_TEST_CASE(addrman_create) {
     CAddrManTest addrman;
 
-    // Set addrman addr placement to be deterministic.
-    addrman.MakeDeterministic();
-
     BOOST_CHECK_EQUAL(addrman.size(), 0);
 
     CAddress addr1 = CAddress(ResolveService("250.1.2.1", 8333), NODE_NONE);
@@ -329,9 +319,6 @@ BOOST_AUTO_TEST_CASE(addrman_create) {
 
 BOOST_AUTO_TEST_CASE(addrman_delete) {
     CAddrManTest addrman;
-
-    // Set addrman addr placement to be deterministic.
-    addrman.MakeDeterministic();
 
     BOOST_CHECK_EQUAL(addrman.size(), 0);
 
@@ -351,9 +338,6 @@ BOOST_AUTO_TEST_CASE(addrman_delete) {
 
 BOOST_AUTO_TEST_CASE(addrman_getaddr) {
     CAddrManTest addrman;
-
-    // Set addrman addr placement to be deterministic.
-    addrman.MakeDeterministic();
 
     // Test: Sanity check, GetAddr should never return anything if addrman
     //  is empty.
@@ -414,9 +398,6 @@ BOOST_AUTO_TEST_CASE(addrman_getaddr) {
 BOOST_AUTO_TEST_CASE(caddrinfo_get_tried_bucket) {
     CAddrManTest addrman;
 
-    // Set addrman addr placement to be deterministic.
-    addrman.MakeDeterministic();
-
     CAddress addr1 = CAddress(ResolveService("250.1.1.1", 8333), NODE_NONE);
     CAddress addr2 = CAddress(ResolveService("250.1.1.1", 9999), NODE_NONE);
 
@@ -468,9 +449,6 @@ BOOST_AUTO_TEST_CASE(caddrinfo_get_tried_bucket) {
 
 BOOST_AUTO_TEST_CASE(caddrinfo_get_new_bucket) {
     CAddrManTest addrman;
-
-    // Set addrman addr placement to be deterministic.
-    addrman.MakeDeterministic();
 
     CAddress addr1 = CAddress(ResolveService("250.1.2.1", 8333), NODE_NONE);
     CAddress addr2 = CAddress(ResolveService("250.1.2.1", 9999), NODE_NONE);
@@ -537,9 +515,6 @@ BOOST_AUTO_TEST_CASE(caddrinfo_get_new_bucket) {
 BOOST_AUTO_TEST_CASE(addrman_selecttriedcollision) {
     CAddrManTest addrman;
 
-    // Set addrman addr placement to be deterministic.
-    addrman.MakeDeterministic();
-
     BOOST_CHECK(addrman.size() == 0);
 
     // Empty addrman should return blank addrman info.
@@ -569,9 +544,6 @@ BOOST_AUTO_TEST_CASE(addrman_selecttriedcollision) {
 
 BOOST_AUTO_TEST_CASE(addrman_noevict) {
     CAddrManTest addrman;
-
-    // Set addrman addr placement to be deterministic.
-    addrman.MakeDeterministic();
 
     // Add twenty two addresses.
     CNetAddr source = ResolveIP("252.2.2.2");
@@ -627,9 +599,6 @@ BOOST_AUTO_TEST_CASE(addrman_noevict) {
 
 BOOST_AUTO_TEST_CASE(addrman_evictionworks) {
     CAddrManTest addrman;
-
-    // Set addrman addr placement to be deterministic.
-    addrman.MakeDeterministic();
 
     BOOST_CHECK(addrman.size() == 0);
 

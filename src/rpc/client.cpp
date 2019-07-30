@@ -3,9 +3,9 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include "rpc/client.h"
-#include "rpc/protocol.h"
-#include "util.h"
+#include <rpc/client.h>
+#include <rpc/protocol.h>
+#include <util.h>
 
 #include <cstdint>
 #include <set>
@@ -20,7 +20,7 @@ public:
 };
 
 /**
- * Specifiy a (method, idx, name) here if the argument is a non-string RPC
+ * Specify a (method, idx, name) here if the argument is a non-string RPC
  * argument and needs to be converted from JSON.
  *
  * @note Parameter indexes start from 0.
@@ -69,6 +69,7 @@ static const CRPCConvertParam vRPCConvertParams[] = {
     {"getblocktemplate", 0, "template_request"},
     {"listsinceblock", 1, "target_confirmations"},
     {"listsinceblock", 2, "include_watchonly"},
+    {"listsinceblock", 3, "include_removed"},
     {"sendmany", 1, "amounts"},
     {"sendmany", 2, "minconf"},
     {"sendmany", 4, "subtractfeefrom"},
@@ -79,8 +80,10 @@ static const CRPCConvertParam vRPCConvertParams[] = {
     {"listunspent", 0, "minconf"},
     {"listunspent", 1, "maxconf"},
     {"listunspent", 2, "addresses"},
+    {"listunspent", 3, "include_unsafe"},
     {"listunspent", 4, "query_options"},
     {"getblock", 1, "verbosity"},
+    {"getblock", 1, "verbose"},
     {"getblockheader", 1, "verbose"},
     {"getchaintxstats", 0, "nblocks"},
     {"gettransaction", 1, "include_watchonly"},
@@ -90,7 +93,12 @@ static const CRPCConvertParam vRPCConvertParams[] = {
     {"createrawtransaction", 2, "locktime"},
     {"signrawtransaction", 1, "prevtxs"},
     {"signrawtransaction", 2, "privkeys"},
+    {"signrawtransactionwithkey", 1, "privkeys"},
+    {"signrawtransactionwithkey", 2, "prevtxs"},
+    {"signrawtransactionwithwallet", 1, "prevtxs"},
     {"sendrawtransaction", 1, "allowhighfees"},
+    {"testmempoolaccept", 0, "rawtxs"},
+    {"testmempoolaccept", 1, "allowhighfees"},
     {"combinerawtransaction", 0, "txs"},
     {"fundrawtransaction", 1, "options"},
     {"gettxout", 1, "n"},

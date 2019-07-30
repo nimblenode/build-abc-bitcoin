@@ -2,32 +2,32 @@
 # Copyright (c) 2015-2016 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
+"""Test the prioritisetransaction mining RPC."""
 
-#
-# Test PrioritiseTransaction code
-#
+import time
 
-from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import *
-from test_framework.mininode import COIN
+from test_framework.blocktools import (
+    create_confirmed_utxos,
+    send_big_transactions,
+)
 # FIXME: review how this test needs to be adapted w.r.t _LEGACY_MAX_BLOCK_SIZE
 from test_framework.cdefs import LEGACY_MAX_BLOCK_SIZE
-from test_framework.blocktools import send_big_transactions, create_confirmed_utxos
+from test_framework.messages import COIN
+from test_framework.test_framework import BitcoinTestFramework
+from test_framework.util import assert_equal, assert_raises_rpc_error
 
 
 class PrioritiseTransactionTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
-        self.num_nodes = 1
-        self.extra_args = [["-printpriority=1"]]
+        self.num_nodes = 2
+        self.extra_args = [["-printpriority=1"], ["-printpriority=1"]]
 
     def run_test(self):
         self.relayfee = self.nodes[0].getnetworkinfo()['relayfee']
 
         utxo_count = 90
         utxos = create_confirmed_utxos(self.nodes[0], utxo_count)
-        # our transactions are smaller than 100kb
-        base_fee = self.relayfee * 100
         txids = []
 
         # Create 3 batches of transactions at 3 different fee rate levels
@@ -119,7 +119,7 @@ class PrioritiseTransactionTest(BitcoinTestFramework):
         inputs.append({"txid": utxo["txid"], "vout": utxo["vout"]})
         outputs[self.nodes[0].getnewaddress()] = utxo["amount"] - self.relayfee
         raw_tx = self.nodes[0].createrawtransaction(inputs, outputs)
-        tx_hex = self.nodes[0].signrawtransaction(raw_tx)["hex"]
+        tx_hex = self.nodes[0].signrawtransactionwithwallet(raw_tx)["hex"]
         txid = self.nodes[0].sendrawtransaction(tx_hex)
 
         # A tx that spends an in-mempool tx has 0 priority, so we can use it to
@@ -130,11 +130,11 @@ class PrioritiseTransactionTest(BitcoinTestFramework):
         outputs = {}
         outputs[self.nodes[0].getnewaddress()] = utxo["amount"] - self.relayfee
         raw_tx2 = self.nodes[0].createrawtransaction(inputs, outputs)
-        tx2_hex = self.nodes[0].signrawtransaction(raw_tx2)["hex"]
+        tx2_hex = self.nodes[0].signrawtransactionwithwallet(raw_tx2)["hex"]
         tx2_id = self.nodes[0].decoderawtransaction(tx2_hex)["txid"]
 
         # This will raise an exception due to min relay fee not being met
-        assert_raises_rpc_error(-26, "66: insufficient priority",
+        assert_raises_rpc_error(-26, "insufficient priority (code 66)",
                                 self.nodes[0].sendrawtransaction, tx2_hex)
         assert(tx2_id not in self.nodes[0].getrawmempool())
 
@@ -148,6 +148,18 @@ class PrioritiseTransactionTest(BitcoinTestFramework):
             "Assert that prioritised free transaction is accepted to mempool")
         assert_equal(self.nodes[0].sendrawtransaction(tx2_hex), tx2_id)
         assert(tx2_id in self.nodes[0].getrawmempool())
+
+        # Test that calling prioritisetransaction is sufficient to trigger
+        # getblocktemplate to (eventually) return a new block.
+        mock_time = int(time.time())
+        self.nodes[0].setmocktime(mock_time)
+        template = self.nodes[0].getblocktemplate()
+        self.nodes[0].prioritisetransaction(
+            tx2_id, 0, -int(self.relayfee * COIN))
+        self.nodes[0].setmocktime(mock_time + 10)
+        new_template = self.nodes[0].getblocktemplate()
+
+        assert(template != new_template)
 
 
 if __name__ == '__main__':

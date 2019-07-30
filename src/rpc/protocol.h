@@ -3,10 +3,10 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#ifndef BITCOIN_RPCPROTOCOL_H
-#define BITCOIN_RPCPROTOCOL_H
+#ifndef BITCOIN_RPC_PROTOCOL_H
+#define BITCOIN_RPC_PROTOCOL_H
 
-#include "fs.h"
+#include <fs.h>
 
 #include <cstdint>
 #include <list>
@@ -38,15 +38,13 @@ enum RPCErrorCode {
     RPC_METHOD_NOT_FOUND = -32601,
     RPC_INVALID_PARAMS = -32602,
     // RPC_INTERNAL_ERROR should only be used for genuine errors in bitcoind
-    // (for exampled datadir corruption).
+    // (for example datadir corruption).
     RPC_INTERNAL_ERROR = -32603,
     RPC_PARSE_ERROR = -32700,
 
     //! General application defined errors
     //!< std::exception thrown in command handling
     RPC_MISC_ERROR = -1,
-    //!< Server is in safe mode, and command is not allowed in safe mode
-    RPC_FORBIDDEN_BY_SAFE_MODE = -2,
     //!< Unexpected type was passed as parameter
     RPC_TYPE_ERROR = -3,
     //!< Invalid address or key
@@ -117,6 +115,11 @@ enum RPCErrorCode {
     RPC_WALLET_NOT_SPECIFIED = -19,
     //!< Backwards compatible aliases
     RPC_WALLET_INVALID_ACCOUNT_NAME = RPC_WALLET_INVALID_LABEL_NAME,
+
+    //! Unused reserved codes, kept around for backwards compatibility. Do not
+    //! reuse.
+    //!< Server is in safe mode, and command is not allowed in safe mode
+    RPC_FORBIDDEN_BY_SAFE_MODE = -2,
 };
 
 UniValue JSONRPCRequestObj(const std::string &strMethod, const UniValue &params,
@@ -135,5 +138,7 @@ bool GenerateAuthCookie(std::string *cookie_out);
 bool GetAuthCookie(std::string *cookie_out);
 /** Delete RPC authentication cookie from disk */
 void DeleteAuthCookie();
+/** Parse JSON-RPC batch reply into a vector */
+std::vector<UniValue> JSONRPCProcessBatchReply(const UniValue &in, size_t num);
 
-#endif // BITCOIN_RPCPROTOCOL_H
+#endif // BITCOIN_RPC_PROTOCOL_H

@@ -2,7 +2,7 @@
 # Copyright (c) 2016 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-""" TimeoutsTest -- test various net timeouts (only in extended tests)
+"""Test various net timeouts.
 
 - Create three bitcoind nodes:
 
@@ -23,9 +23,9 @@
 
 from time import sleep
 
-from test_framework.mininode import *
+from test_framework.messages import msg_ping
+from test_framework.mininode import network_thread_start, P2PInterface
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import *
 
 
 class TestNode(P2PInterface):

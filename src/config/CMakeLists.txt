@@ -7,14 +7,14 @@ include(CheckIncludeFiles)
 include(CheckSymbolExists)
 include(CheckCXXSourceCompiles)
 
-# Package informations
-set(PACKAGE_NAME "Bitcoin ABC")
+# Package information
+set(PACKAGE_NAME "Bitcoin ABC" CACHE STRING "Package name")
 
 # Version
-set(CLIENT_VERSION_MAJOR 0)
-set(CLIENT_VERSION_MINOR 19)
-set(CLIENT_VERSION_REVISION 0)
-set(CLIENT_VERSION_BUILD 0)
+set(CLIENT_VERSION_MAJOR 0 CACHE STRING "Major version number")
+set(CLIENT_VERSION_MINOR 19 CACHE STRING "Minor version number")
+set(CLIENT_VERSION_REVISION 11 CACHE STRING "Revision version number")
+set(CLIENT_VERSION_BUILD 0 CACHE STRING "Build version number")
 
 option(CLIENT_VERSION_IS_RELEASE "Build a release version" OFF)
 
@@ -23,6 +23,9 @@ set(COPYRIGHT_YEAR 2019)
 set(COPYRIGHT_HOLDERS "The %s developers")
 set(COPYRIGHT_HOLDERS_SUBSTITUTION Bitcoin)
 string(REPLACE "%s" ${COPYRIGHT_HOLDERS_SUBSTITUTION} COPYRIGHT_HOLDERS_FINAL ${COPYRIGHT_HOLDERS})
+
+# Generate the version.h file
+configure_file(version.h.cmake.in version.h ESCAPE_QUOTES)
 
 # Endianness
 check_include_files("endian.h" HAVE_ENDIAN_H)
@@ -153,6 +156,24 @@ set(ENABLE_WALLET ${BUILD_BITCOIN_WALLET})
 
 # Activate ZeroMQ
 set(ENABLE_ZMQ ${BUILD_BITCOIN_ZMQ})
+
+# Try to find libqrencode
+# Only used in the wallet GUI
+if(ENABLE_QRCODE AND BUILD_BITCOIN_WALLET AND BUILD_BITCOIN_QT)
+	find_package(QREncode REQUIRED)
+	set(USE_QRCODE 1 CACHE INTERNAL "QR code is enabled")
+endif()
+
+# Try to find miniupnpc
+if(ENABLE_UPNP)
+	find_package(MiniUPnPc REQUIRED)
+
+	# The expected behavior is as follow:
+	#  - If UPnP is enabled USE_UPNP must be defined
+	#  - If UPnP should be the default port map method, USE_UPNP should be
+	#    defined to 1, otherwise it should be defined to 0.
+	set(USE_UPNP ${START_WITH_UPNP} CACHE INTERNAL "UPnP is enabled")
+endif()
 
 # Generate the config
 configure_file(bitcoin-config.h.cmake.in bitcoin-config.h ESCAPE_QUOTES)

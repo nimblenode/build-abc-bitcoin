@@ -1,12 +1,16 @@
 // Copyright (c) 2011-2016 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
-#include "arith_uint256.h"
-#include "test/test_bitcoin.h"
-#include "uint256.h"
-#include "version.h"
+#include <uint256.h>
+
+#include <arith_uint256.h>
+#include <streams.h>
+#include <version.h>
+
+#include <test/test_bitcoin.h>
 
 #include <boost/test/unit_test.hpp>
+
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -49,7 +53,7 @@ const uint8_t MaxArray[] =
 const uint256 MaxL = uint256(std::vector<uint8_t>(MaxArray, MaxArray + 32));
 const uint160 MaxS = uint160(std::vector<uint8_t>(MaxArray, MaxArray + 20));
 
-std::string ArrayToString(const uint8_t A[], unsigned int width) {
+static std::string ArrayToString(const uint8_t A[], unsigned int width) {
     std::stringstream Stream;
     Stream << std::hex;
     for (unsigned int i = 0; i < width; ++i) {

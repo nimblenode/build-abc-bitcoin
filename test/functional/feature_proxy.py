@@ -2,8 +2,8 @@
 # Copyright (c) 2015-2016 The Bitcoin Core developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
+"""Test bitcoind with different proxy configuration.
 
-'''
 Test plan:
 - Start bitcoind's with different proxy configurations
 - Use addnode to initiate connections
@@ -25,19 +25,24 @@ addnode connect to IPv4
 addnode connect to IPv6
 addnode connect to onion
 addnode connect to generic DNS name
-'''
+"""
 
-import socket
 import os
+import socket
 
-from test_framework.socks5 import Socks5Configuration, Socks5Command, Socks5Server, AddressType
+from test_framework.netutil import test_ipv6_local
+from test_framework.socks5 import (
+    AddressType,
+    Socks5Command,
+    Socks5Configuration,
+    Socks5Server,
+)
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import (
+    assert_equal,
     PORT_MIN,
     PORT_RANGE,
-    assert_equal,
 )
-from test_framework.netutil import test_ipv6_local
 
 RANGE_BEGIN = PORT_MIN + 2 * PORT_RANGE  # Start after p2p and rpc ports
 
